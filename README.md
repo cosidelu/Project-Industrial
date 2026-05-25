@@ -11,7 +11,6 @@ Questo documento descrive il funzionamento e l'utilizzo dei quattro script princ
 Questa classe incapsula le logiche di movimento e monitoraggio della posa. L'esecuzione dei comandi di moto fermerà il programma Python finché il robot non raggiunge fisicamente l'obiettivo (o fino allo scadere di un timeout).
 
 **Costruttore ed Attributi:**
-- `__init__(ip_address="127.0.0.1")`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo) e `self.default_timeout = 60.0` (secondi).
 - `__init__(ip_address="127.0.0.1", default_position_j=None)`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo), `self.default_timeout = 60.0` (secondi) e accetta opzionalmente una configurazione giunti di sicurezza (salvata in `self.default_position_j`).
 
 **Metodi di Rete e Sicurezza:**
@@ -211,7 +210,33 @@ print(f"Rilevati {len(unique_defects)} difetti univoci dopo il filtraggio.")
 
 ---
 
-## 5. `spherical_movement.py` (Movimento Sferico e Sicurezza)
+## 5. `inspection_and_marking.py` (Pipeline Completa di Ispezione e Marcatura)
+**Scopo:** Coordina l'intero flusso operativo dal primo scatto con la ZED fino alla marcatura finale del difetto con il pennarello.
+
+### Funzioni principali
+- `inspection_phase(...)`: esegue l'ispezione globale sul casco muovendo il robot lungo una sequenza di waypoint sferici, acquisendo immagini e point cloud, rilevando i difetti e calcolando le loro coordinate globali.
+- `safe_transit_via_hub(...)`: sposta il robot in un punto hub sicuro sopra il casco per separare i movimenti di ispezione, raffinamento e marcatura.
+- `refine_defect_position(...)`: per ogni difetto stimato, esegue una serie di scatti ravvicinati da una distanza di lavoro fissa, associa i rilevamenti migliori e media le posizioni globali per migliorare l'accuratezza.
+- `mark_defect(...)`: calcola la posa del marker, va al punto di approccio con `move_ptp`, avanza linearmente sul difetto con `move_line` e poi ritorna indietro.
+- `refine_and_mark_phase(...)`: processa tutti i difetti unici trovati, facendo transiti sicuri con la camera e con il marker, e marcando solo i difetti confermati.
+
+### Parametri di tuning principali
+- `GENERIC_DETECTION`: abilita il rilevamento generico degli anomalie cromatiche invece della sola ricerca del verde.
+- `INSPECTION_RADIUS`, `HUB_ANGLES` e `INSPECTION_SPEED`: definiscono la traiettoria sferica di ispezione.
+- `REFINE_ATTENTION_RADIUS`, `REFINE_CYLINDER_RADIUS`, `REFINE_HEIGHT_RANGE`: restringono la ricerca durante il raffinamento per aumentare la precisione.
+- `DUPLICATE_THRESHOLD`, `ASSOCIATION_THRESHOLD`: gestiscono il merging e l'associazione tra difetti rilevati in scatti diversi.
+
+### Workflow completo
+1. `main()` connette il robot e inizializza la ZED.
+2. Il robot va in posizione iniziale e avvia `inspection_phase(...)`.
+3. I difetti globali vengono filtrati e resi unici.
+4. L'operatore conferma i risultati.
+5. `refine_and_mark_phase(...)` raffina ogni difetto e ne esegue la marcatura.
+6. Il sistema riporta il robot in posizione iniziale, disconnette e chiude la ZED.
+
+---
+
+## 6. `spherical_movement.py` (Movimento Sferico e Sicurezza)
 **Scopo:** Gestisce il movimento del robot attorno alla calotta sferica del casco in totale sicurezza, eludendo zone di collisione (es. la base d'appoggio o ingombri frontali/posteriori) ed evitando ostacoli e singolarità.
 
 ### Funzioni di Sicurezza e Controllo Traiettoria
