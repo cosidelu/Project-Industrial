@@ -49,7 +49,7 @@ controller.default_positioning()
 **Scopo:** Interagisce con le SDK della ZED, segmenta lo spazio colore delle immagini ed estrae i dati dalla Point Cloud.
 
 ### Classe: `defect`
-Contenitore logico progressivo che incapsula tutte le caratteristiche di una singola macchia verde scansionata.
+Contenitore logico progressivo che incapsula tutte le caratteristiche di un singolo difetto rilevato nell'immagine, sia esso uno sticker verde oppure una regione di colore anomalo rispetto ai colori attesi del casco.
 
 **Attributi (Memoria):**
 - `centroid` (numpy array): Coordinate pixel `[cx, cy]` nel frame dell'immagine 2D.
@@ -68,10 +68,11 @@ Contenitore logico progressivo che incapsula tutte le caratteristiche di una sin
 
 ### Funzioni Analisi Immagine (OpenCV)
 - `find_all_green_masks_and_centroids(bgr_image, LOWER, UPPER, MIN_AREA, attention_radius)`: Converte la foto in Spazio Colore HSV, effettua il threshold col verde, esegue operazioni morfologiche e calcola i contorni. Ritorna la lista di oggetti `defect` validi. Un `attention_radius` (opzionale) ignora punti periferici dell'ottica.
+- `find_all_generic_anomaly_masks_and_centroids(bgr_image, MIN_AREA, attention_radius)`: Converte la foto in Spazio Colore HSV, costruisce una maschera dei colori attesi del casco, cioè nero, bianco, grigio e rosso classico, e successivamente ne calcola l'inverso. I pixel che non appartengono ai colori attesi vengono considerati possibili anomalie cromatiche. La funzione esegue poi filtraggio morfologico, ricerca dei contorni, validazione tramite area minima e calcolo del centroide, restituendo una lista di oggetti `defect`.
 - `extract_3d_points_from_mask(mask, point_cloud)`: Filtra l'enorme mappa 3D iterando solo sulle coordinate corrispondenti ai pixel "accesi" sulla maschera. Controlla `np.isfinite` scartando nuvole corrotte.
 - `compute_mean_3d_point(points_3d)`: Fa la media aritmetica (`np.mean`) sull'asse 0 per stabilizzare il rumore del sensore infrarossi e ottenere il singolo centro `[X, Y, Z]`.
 - `draw_multiple_debug()`: Appiattisce tutti i difetti in una sola immagine per il monitor.
-- `take_defects_local(runtime, zed, image_zed, point_cloud, attention_radius=None)`: Master Workflow. Fa uno "scatto" fisico dalla telecamera, chiama `find_all_green_masks`, itera sulle macchie scoperte popolando `extract_3d_points` e assegna al volo `pos3d_camera` su di essi. Tramite `attention_radius` permette di restringere la ricerca al solo centro dell'ottica per escludere il rumore periferico.
+- `take_defects_local(runtime, zed, image_zed, point_cloud, attention_radius=None, generic_detection=False)`: Master Workflow. Fa uno "scatto" fisico dalla telecamera, acquisendo immagine e point cloud. Se `generic_detection=False`, chiama `find_all_green_masks_and_centroids` per cercare il difetto verde. Se `generic_detection=True`, chiama `find_all_generic_anomaly_masks_and_centroids` per cercare difetti di colore generico tramite maschera inversa dei colori attesi del casco. In entrambi i casi itera sui difetti rilevati, popola `points3d` tramite `extract_3d_points_from_mask` e assegna `pos3d_camera`. Tramite `attention_radius` permette di restringere la ricerca al solo centro dell'ottica per escludere il rumore periferico.
 
 ---
 
@@ -142,19 +143,19 @@ print("Posa TCP richiesta:", np.round(ee_target_pose, 2))
 **Scopo:** Coordina pipeline dati per lo scenario "multi-scatto", unendo dati visivi multipli nello stesso riferimento universale. Ripulisce i falsi rilevamenti e i cloni per generare la "lista finale univoca" dei punti bersaglio.
 
 ### Operazioni Matematiche
-- `take_defects_global(...)`: Funzione wrapper completa che ingloba l'acquisizione (`take_defects_local`), il calcolo delle coordinate globali (`compute_global_coordinates`) e l'applicazione condizionale progressiva dei filtri spaziali (`cam_cylinder_filter` e `glob_position_filter`).
+- `take_defects_global(..., generic_detection=False)`: Funzione wrapper completa che ingloba l'acquisizione (`take_defects_local`), il calcolo delle coordinate globali (`compute_global_coordinates`) e l'applicazione condizionale progressiva dei filtri spaziali (`cam_cylinder_filter` e `glob_position_filter`). Il parametro `generic_detection` viene passato a `take_defects_local`: se vale `False` viene usato il rilevamento classico del difetto verde, mentre se vale `True` viene usato il rilevamento generico tramite maschera inversa dei colori attesi del casco.
 - `compute_global_coordinates(defect_list, H_cam_to_global)`: Cicla l'intera lista di difetti e sfrutta il calcolo in `kinematics_v2` applicando la matrice fornita, prelevando da `pos3d_camera` ed inserendo l'output finale in `pos3d_global` di ogni oggetto.
 
 ### Operazioni Logiche e Spaziali (Algoritmi di Filtraggio Dati)
 - `cam_cylinder_filter(defect_list, radius, height_range)`: Agisce nello spazio _locale_ prima della globalizzazione. Rimuove i difetti estrapolati che risultano ai margini distorti (fuori dal cilindro di raggio X centrato sull'asse Z dell'ottica) o fuori da un range di Z (es: troppo vicini o lontani dalla focale ottima).
-- `glob_position_filter(defect_list, range, center)`: Scarta tutto ciò che, pur essendo verde, si trova ad una distanza euclidea globale (`np.linalg.norm`) incompatibile col diametro del casco (es. bottiglie, vestiti sullo sfondo dell'officina).
+- `glob_position_filter(defect_list, range, center)`: Scarta tutto ciò che, pur essendo stato rilevato come difetto cromatico, si trova ad una distanza euclidea globale (`np.linalg.norm`) incompatibile col diametro del casco (es. bottiglie, vestiti sullo sfondo dell'officina).
 - `duplicate_filter(defect_list, distance_threshold=25.0)`: Previene che scatti sovrapposti facciano registrare due volte il medesimo bersaglio. Esegue un check incrociato (O(N^2)) su tutti i difetti in memoria e rimuove i successivi se presentano uno scarto euclideo globale inferiore alla tolleranza.
 
 ### Processo di Esecuzione (Main Block)
 Se avviato da terminale (`python defects_id_wrapper.py`), questo file opera in Test Mode:
 1. Definisce pose fasulle manuali per `ee_pose_global` e il `camera_offset` (non necessita del robot connesso).
 2. Aspetta input umano (SPAZIO).
-3. Simula la catena tramite l'invocazione di `take_defects_global` e produce il rendering a display.
+3. Simula la catena tramite l'invocazione di `take_defects_global` e produce il rendering a display. Il test può essere eseguito sia in modalità classica, con `generic_detection=False`, sia in modalità rilevamento generico, con `generic_detection=True`.
 4. All'uscita (ESC) scarta tutti i cloni tramite `duplicate_filter` e stampa progressivamente le coordinate pulite di ogni ritrovamento a monitor per verifica.
 
 ### Esempio d'uso (`take_defects_global`)
@@ -186,8 +187,12 @@ for pose in pose_di_scatto:
     defect_list, bgr_image = take_defects_global(
         runtime, zed, image_zed, point_cloud,
         H_cam_to_global=H_cam_to_global,
-        cylindrical_filter=True, radius=150.0, height_range=(0, 300)
+        cylindrical_filter=True, radius=150.0, height_range=(0, 300), generic_detection=False
     )
+
+    # Per usare il rilevamento generico di anomalie cromatiche:
+    # impostare generic_detection=True.
+    # In questo caso il sistema non cerca solo il verde, ma tutto ciò che non appartiene ai colori attesi del casco.
     
     # 3. Utilizzo del plotter di debug a video
     debug_img, mask_bgr = draw_multiple_debug(bgr_image, defect_list, show_global=True)
