@@ -13,7 +13,8 @@ import numpy as np
 def take_defects_global(runtime, zed, image_zed, point_cloud, H_cam_to_global, 
                         attention_radius=None, 
                         cylindrical_filter=False, radius=150.0, height_range=(0, 300),
-                        position_filtering=False):
+                        position_filtering=False,
+                        generic_detection=False):
     
     '''
     Funzione wrapper che esegue l'intero flusso di calcolo per ottenere la lista dei difetti con coordinate globali.
@@ -35,7 +36,14 @@ def take_defects_global(runtime, zed, image_zed, point_cloud, H_cam_to_global,
     - bgr_image: immagine BGR acquisita dalla ZED, utile per il debug e il rendering dei layer informativi.
     '''
 
-    defect_list, bgr_image = take_defects_local(runtime, zed, image_zed, point_cloud, attention_radius=attention_radius)
+    defect_list, bgr_image = take_defects_local(
+        runtime,
+        zed,
+        image_zed,
+        point_cloud,
+        attention_radius=attention_radius,
+        generic_detection=generic_detection
+    )
 
     compute_global_coordinates(defect_list, H_cam_to_global)
 
