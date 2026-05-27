@@ -78,7 +78,7 @@ DUPLICATE_THRESHOLD = 25.0
 ASSOCIATION_THRESHOLD = 30.0
 
 # Distanza minima dal centro casco per il punto di approccio del marker [mm].
-MIN_APPROACH_RADIUS = 400
+MIN_APPROACH_RADIUS = 250
 
 
 # =====================================================
@@ -114,7 +114,7 @@ REFINE_ATTENTION_RADIUS = 250
 REFINE_CYLINDER_RADIUS = 150.0
 
 # Range di profondità più stretto per il raffinamento [mm].
-REFINE_HEIGHT_RANGE = (200, 600)
+REFINE_HEIGHT_RANGE = (50, 300)
 
 
 # -------------------------------
@@ -544,13 +544,21 @@ def mark_defect(controller,
 
     # Salva la posa attuale come punto di ritorno post-marking,
     # PRIMA di qualsiasi movimento verso il difetto.
-    pre_marking_pose = list(controller.robot.tcp_coord)
+    #pre_marking_pose = list(controller.robot.tcp_coord)
 
     # Movimento al punto di approccio.
-    controller.move_ptp(
-        ee_approach_pose,
+    if not move_circle_spherical(
+        controller=controller,
+        end_sph_coord=[r_approach, alpha_deg, beta_deg],
+        radius=250,
+        tool_pose_ee=vb.MARKER_POSE_EE,
+        helmet_center=helmet_center,
         speed=marking_speed
-    )
+    ):
+        print("  [SKIP] Impossibile raggiungere il punto di approccio in sicurezza.")
+        return False
+    
+    pre_marking_pose = controller.robot.tcp_coord
 
     # Movimento lineare lento fino al difetto (tocco).
     print("    Avanzamento lineare al difetto.")
@@ -562,16 +570,16 @@ def mark_defect(controller,
     # Arretramento lineare al punto di approccio.
     print("    Arretramento lineare.")
     controller.move_line(
-        ee_approach_pose,
+        pre_marking_pose,
         speed=marking_speed
     )
 
     # PTP di ritorno alla posa precedente al marking.
-    print("    Ritorno PTP alla posa pre-marking.")
-    controller.move_ptp(
-        pre_marking_pose,
-        speed=marking_speed
-    )
+    #print("    Ritorno PTP alla posa pre-marking.")
+    #controller.move_ptp(
+    #    pre_marking_pose,
+    #   speed=marking_speed
+    #)
 
     print("    Marcatura completata.")
 

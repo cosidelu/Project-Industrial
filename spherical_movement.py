@@ -23,13 +23,13 @@ def angles_unsafe(alpha, beta):
     if not (0.0 <= beta <= 180.0):
         return True
 
-    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 90 gradi
-    if abs(alpha) > 90.0:
+    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 120 gradi
+    if alpha > 105.0 or alpha < -95.0:
         return True
 
     # 3. Controllo zona posteriore (retro): più larga che alta
     # A alpha = 0 la soglia è 20, a alpha = 90 la soglia sale a 30
-    beta_soglia_retro = 15.0 + 25.0 * (alpha / 90.0)**2
+    beta_soglia_retro = 15.0 + 26.0 * (alpha / 90.0)**2
     if beta < beta_soglia_retro:
         return True
 

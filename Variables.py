@@ -13,10 +13,9 @@ anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in grad
 '''
 
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
+MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
 HELMET_CENTER_GLOBAL = [-1.1404489900286907, 661.6529292463887, 191.09565317703016 + 50] #trovato scendendo di 20cm dall'apice del casco
 
-# DA SISTEMARE I SEGUENTI VALORI
-MARKER_POSE_EE = [0.0, 0.0, 100.0, 0.0, 0.0, 0.0]  # Posa del marker rispetto all'End Effector
 
 DEFAULT_POSITIONING_JOINTS = [-132 , 0, -133, -48 , -42, 180]
 DEFAULT_POSITIONING_POSE = [34, 400, 320, 90, 0, -90]
