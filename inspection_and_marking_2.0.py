@@ -32,7 +32,7 @@ GENERIC_DETECTION = False
 
 # IP del robot reale in laboratorio.
 # Per simulazione/test locale puoi mettere "127.0.0.1".
-IP_ROBOT = "192.168.19.22"
+IP_ROBOT = "192.168.1.3"
 
 # Raggio della sfera di ispezione attorno al casco [mm].
 INSPECTION_RADIUS = 400
