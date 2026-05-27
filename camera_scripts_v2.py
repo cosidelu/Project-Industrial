@@ -498,7 +498,7 @@ def main():
                 zed,
                 image_zed,
                 point_cloud,
-                attention_radius=None,
+                attention_radius=200,
                 generic_detection=True
             )
             
