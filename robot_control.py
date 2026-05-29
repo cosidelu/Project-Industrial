@@ -12,7 +12,7 @@ class RobotController:
         # Crea l'oggetto robot e apre la connessione Modbus TCP
         self.robot = tm.TM_Robot(ip_address)
         self.default_tolerance = 1.0
-        self.default_timeout = 60.0
+        self.default_timeout = 300.0
         self.default_position_j = default_position_j
 
     def connect(self):

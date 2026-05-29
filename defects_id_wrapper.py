@@ -96,6 +96,9 @@ def compute_global_coordinates(defect_list, H_cam_to_global):
             d.pos3d_global = kin.homogeneous_trasform(H_cam_to_global, d.pos3d_camera)
 
 def compute_spherical_coordinates(defect_list, helmet_center=HELMET_CENTER_GLOBAL):
+    """
+    Calcola le coordinate sferiche (r, alpha, beta) per ciascun difetto rispetto al centro del casco.
+    """
     for d in defect_list:
         if d.pos3d_camera is not None:
             d.sph_coord = kin.to_helmet_angles(d.pos3d_global, helmet_center)
