@@ -55,8 +55,28 @@ class defect():
             
         return debug_img
     
-    def say_hi(self):
-        print(f"hello")
+    def say_hi(self, idx=None):
+        """Stampa valori utili per debug/tuning del singolo difetto."""
+
+        if idx is not None:
+            print(f"      Difetto rilevato {idx + 1}:")
+        else:
+            print("      Difetto rilevato:")
+
+        if self.centroid is not None:
+            print(f"        centroid: {self.centroid}")
+
+        if self.pos3d_camera is not None:
+            radial_camera = np.sqrt(self.pos3d_camera[0] ** 2 + self.pos3d_camera[1] ** 2)
+            print(f"        pos3d_camera: {np.round(self.pos3d_camera, 1)}")
+            print(f"        Z camera: {self.pos3d_camera[2]:.1f} mm")
+            print(f"        radial camera: {radial_camera:.1f} mm")
+
+        if self.pos3d_global is not None:
+            print(f"        pos3d_global: {np.round(self.pos3d_global, 1)}")
+
+        if self.sph_coord is not None:
+            print(f"        sph_coord: {np.round(self.sph_coord, 1)}")
 
 # ============================================================
 # CAMERA / ZED UTILITY FUNCTIONS
