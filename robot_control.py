@@ -4,6 +4,11 @@ import numpy as np
 
 IP_ADDRESS = "127.0.0.1"
 
+"""
+all movements accept speed in mm/s now, with a rough /10 division for ptp
+"""
+SPEED = 300  # Velocità di movimento in mm/s
+PTP_SCALE = 0.1  # Fattore di scala per la velocità PTP (10% della velocità lineare)
 
 class RobotController:
     """Classe per l'astrazione e il controllo bloccante del manipolatore Techman."""
@@ -13,6 +18,7 @@ class RobotController:
         self.robot = tm.TM_Robot(ip_address)
         self.default_tolerance = 1.0
         self.default_timeout = 300.0
+        self.secure_wait = 0.5
         self.default_position_j = default_position_j
 
     def connect(self):
@@ -50,28 +56,31 @@ class RobotController:
             errors = np.abs(diff)
 
             if np.max(errors) <= self.default_tolerance:
-                time.sleep(0.05)
+                time.sleep(self.secure_wait)  # Attende un breve periodo per garantire la stabilità
                 return True
 
             if time.time() - start > self.default_timeout:
                 raise TimeoutError(f"Target non raggiunto. Errore: {np.round(errors, 2)}")
-            time.sleep(0.1)
+            
+            time.sleep(0.2) #to not overload the robot with status requests
 
-    def move_ptp(self, pose, speed=50, data_format="CPP"):
+    def move_ptp(self, pose, speed=SPEED, data_format="CPP"):
         """Esegue un movimento PTP (Punto-Punto) e attende il completamento"""
+        speed = speed * PTP_SCALE
         self.robot.ptp(pose, speed, data_format=data_format)
         self._wait_until_pose(pose, use_joints=False)
 
-    def move_joints(self, joints, speed=100):
+    def move_joints(self, joints, speed=SPEED):
+        speed = speed * PTP_SCALE
         self.robot.ptp(joints, speed, data_format="JPP")
         self._wait_until_pose(joints, use_joints=True)
 
-    def move_line(self, pose, speed=300, data_format="CAP"):
+    def move_line(self, pose, speed=SPEED, data_format="CAP"):
         """Esegue un movimento lineare (Line) e attende il completamento"""
         self.robot.line(pose, speed, data_format=data_format)
         self._wait_until_pose(pose, use_joints=False)
 
-    def move_circle(self, mid_point, end_point, speed=300): #here speed is in mm/s
+    def move_circle(self, mid_point, end_point, speed=SPEED): #here speed is in mm/s
         """
         Genera un movimento circolare tra la posizione corrente, 
         mid_point e end_point, attendendo il completamento
