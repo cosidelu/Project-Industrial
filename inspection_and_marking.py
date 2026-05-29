@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
 import kinematics_v2 as kin
 from Variables import HELMET_CENTER_GLOBAL, CAMERA_POSE_EE, MARKER_POSE_EE
@@ -34,6 +35,14 @@ IP_ROBOT = "192.168.1.3"
 # Raggio della sfera di ispezione attorno al casco [mm].
 INSPECTION_RADIUS = 300
 
+# Lista delle posizioni di ispezione/scatto.
+INSPECTION_POSITIONS = [
+    [INSPECTION_RADIUS,   0, 90],   # alto
+    [INSPECTION_RADIUS,   0, 45],   # frontale/intermedio
+    [INSPECTION_RADIUS,  87, 60],   # laterale destro
+    [INSPECTION_RADIUS, -87, 60],   # laterale sinistro
+]
+
 # Velocità movimento durante ispezione [mm/s].
 INSPECTION_SPEED = 400
 
@@ -55,6 +64,8 @@ ASSOCIATION_THRESHOLD = 30.0
 # Distanza minima dal centro casco per il punto di approccio del marker [mm].
 MIN_APPROACH_RADIUS = 250
 
+# Distanza massima per scartare un difetto vicino ad un altro [mm]
+DUPLICATE_DISTANCE = 25
 
 # =====================================================
 # PARAMETRI FILTRI / TUNING
@@ -102,6 +113,26 @@ REFINE_HEIGHT_RANGE = (50, 300)
 # Filtro rispetto alla posizione globale del casco.
 # Per ora meglio False: accendilo solo quando HELMET_CENTER_GLOBAL è affidabile.
 USE_GLOBAL_POSITION_FILTER = False
+
+
+# =====================================================
+# UTILITY NOTEBOOK / DEBUG
+# =====================================================
+
+def show_debug_matplotlib(debug_img=None, mask_bgr=None, title="Debug"):
+    if debug_img is not None:
+        plt.figure(figsize=(8, 6))
+        plt.imshow(debug_img[:, :, ::-1])
+        plt.title(f"{title} - RGB")
+        plt.axis("off")
+        plt.show()
+
+    if mask_bgr is not None:
+        plt.figure(figsize=(8, 6))
+        plt.imshow(mask_bgr[:, :, ::-1])
+        plt.title(f"{title} - Mask")
+        plt.axis("off")
+        plt.show()
 
 
 # =====================================================
@@ -335,6 +366,10 @@ def mark_defect(controller,
         print("  [SKIP] Difetto senza coordinate globali.")
         return False
     
+    if defect_obj.sph_coord is None:
+        print("  [SKIP] Difetto senza sph_coord.")
+        return False
+    
     def_sph = defect_obj.sph_coord
 
     # INTRODURRE IL CLIPPING PER ALPHA SUPERIORI A 90°
@@ -426,3 +461,4 @@ def mark_defect(controller,
     )
 
     print("    Marcatura completata.")
+    return True

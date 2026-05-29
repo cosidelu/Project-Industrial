@@ -70,6 +70,7 @@ class defect():
             radial_camera = np.sqrt(self.pos3d_camera[0] ** 2 + self.pos3d_camera[1] ** 2)
             print(f"        pos3d_camera: {np.round(self.pos3d_camera, 1)}")
             print(f"        Z camera: {self.pos3d_camera[2]:.1f} mm")
+            print(f"        radial camera: {radial_camera:.1f} mm")
 
         if self.pos3d_global is not None:
             print(f"        pos3d_global: {np.round(self.pos3d_global, 1)}")
