@@ -30,6 +30,7 @@ class defect():
         self.points3d = None          # np.array of all 3D points corresponding to the defect mask, to be calculated from the point cloud and the mask
         self.pos3d_camera = None           # np.array([x, y, z]) in millimeters, to be calculated from the point cloud and the mask
         self.pos3d_global = None           # np.array([x, y, z]) in millimeters, to be calculated by transforming the camera coordinates into the global robot coordinates
+        self.sph_coord = None              # np.array([r, alpha, beta]) in millimeters and degrees, to be calculated by converting the global Cartesian coordinates into spherical coordinates
 
     def img(self):
         """
