@@ -58,7 +58,7 @@ INSPECTION_ANGLES = [
 ]
 
 # Velocità movimento durante ispezione [mm/s].
-INSPECTION_SPEED = 300
+INSPECTION_SPEED = 400
 
 # Velocità movimento durante marcatura [mm/s].
 MARKING_SPEED = 50
@@ -130,196 +130,49 @@ USE_GLOBAL_POSITION_FILTER = False
 # =====================================================
 # FASE 1 - ISPEZIONE GLOBALE
 # =====================================================
-
-def inspection_phase(controller,
-                     zed,
-                     runtime,
-                     image_zed,
-                     point_cloud,
-                     helmet_center,
-                     inspection_angles,
-                     radius,
-                     generic_detection=False):
-    """
-    Esegue l'ispezione globale del casco.
-
-    Procedura:
-    1. Il robot si muove tra diversi punti attorno al casco.
-    2. Nei punti di scatto acquisisce immagine e point cloud con la ZED.
-    3. take_defects_global rileva i difetti e calcola pos3d_global.
-    4. Tutti i difetti vengono accumulati.
-    5. Alla fine vengono rimossi i duplicati.
-
-    generic_detection:
-    - False -> detection verde classica
-    - True  -> detection generica con maschera inversa
-    """
-
-    all_defects = []
-
-    # Matrice fissa camera -> end-effector.
-    H_cam_to_ee = kin.create_homogeneous_matrix(CAMERA_POSE_EE)
-
-    n_waypoints = len(inspection_angles)
-    n_shots = sum(1 for ang in inspection_angles if not ang[2])
-
-    print("Inizio ispezione globale.")
-    print(f"Waypoint totali: {n_waypoints}")
-    print(f"Scatti previsti: {n_shots}")
-
-    shot_count = 0
-
-    for i, (alpha_deg, beta_deg, is_hub) in enumerate(inspection_angles):
-
-        if is_hub:
-            tag = "HUB - transito, nessuna foto"
-        else:
-            shot_count += 1
-            tag = f"SCATTO {shot_count}/{n_shots} - alpha={alpha_deg}°, beta={beta_deg}°"
-
-        print(f"\n[{i + 1}/{n_waypoints}] {tag}")
-
-        end_sph = np.array([radius, alpha_deg, beta_deg])
-
-        # Primo punto: PTP diretto verso hub iniziale.
-        if i == 0:
-            p_first, r_first = kin.to_helmet_coordinates(
-                end_sph,
-                helmet_center
-            )
-
-            ee_first_pose = kin.compute_ee_pose_for_tool_target(
-                p_first,
-                r_first,
-                tool_pose_ee=CAMERA_POSE_EE
-            )
-
-            print("  Movimento PTP verso il primo punto/hub.")
-            controller.move_ptp(ee_first_pose, speed=INSPECTION_SPEED)
-
-        # Punti successivi: movimento sferico attorno al casco.
-        else:
-            print("  Movimento sferico verso il waypoint successivo.")
-            move_circle_spherical(
-                controller=controller,
-                end_sph_coord=end_sph,
-                radius=radius,
-                tool_pose_ee=CAMERA_POSE_EE,
-                helmet_center=helmet_center,
-                speed=INSPECTION_SPEED
-            )
-
-        # Gli hub sono solo transito.
-        if is_hub:
-            continue
-
-        # Pausa breve per stabilizzare robot/camera.
-        time.sleep(1)
-
-        # Lettura posa reale del robot dopo il movimento.
-        # Fondamentale perché la camera è montata eye-in-hand.
-        ee_pose_live = controller.robot.tcp_coord
-
-        H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_live)
-        H_cam_to_global = H_ee_to_global @ H_cam_to_ee
-
-        # Acquisizione + detection + trasformazione globale.
-        # Qui sono già inseriti i parametri di tuning per la scansione globale.
-        defect_list, bgr_image = take_defects_global(
-            runtime,
-            zed,
-            image_zed,
-            point_cloud,
-            H_cam_to_global=H_cam_to_global,
-
-            # Filtro 2D immagine.
-            attention_radius=GLOBAL_ATTENTION_RADIUS,
-
-            # Filtro cilindrico in frame camera.
-            cylindrical_filter=True,
-            radius=GLOBAL_CYLINDER_RADIUS,
-            height_range=GLOBAL_HEIGHT_RANGE,
-
-            # Filtro globale rispetto al casco.
-            position_filtering=USE_GLOBAL_POSITION_FILTER,
-
-            # Switch detection verde/generica.
-            generic_detection=generic_detection
-        )
-
-        # Debug visuale.
-        debug_img, mask_bgr = draw_multiple_debug(
-            bgr_image,
-            defect_list,
-            show_global=True
-        )
-
-        cv2.imshow(WINDOW_NAME_MASK, mask_bgr)
-        cv2.imshow(WINDOW_NAME_RGB, debug_img)
-        cv2.waitKey(100)
-
-        all_defects.extend(defect_list)
-
-        print(f"  Difetti rilevati in questo scatto: {len(defect_list)}")
-
-        # Stampa valori utili per tuning.
-        for idx, d in enumerate(defect_list):
-            if d.pos3d_camera is not None:
-                radial_camera = np.sqrt(d.pos3d_camera[0] ** 2 + d.pos3d_camera[1] ** 2)
-                print(f"    Difetto {idx + 1}:")
-                print(f"      centroid: {d.centroid}")
-                print(f"      pos3d_camera: {np.round(d.pos3d_camera, 1)}")
-                print(f"      Z camera: {d.pos3d_camera[2]:.1f} mm")
-                print(f"      radial camera: {radial_camera:.1f} mm")
-                print(f"      pos3d_global: {np.round(d.pos3d_global, 1)}")
-
-    print("\nIspezione globale completata.")
-    print(f"Difetti totali pre-filtraggio: {len(all_defects)}")
-
-    # Rimozione duplicati tra scatti diversi.
-    unique_defects = duplicate_filter(
-        all_defects,
-        distance_threshold=DUPLICATE_THRESHOLD
-    )
-
-    print(f"Difetti univoci dopo filtraggio: {len(unique_defects)}")
-
-    return unique_defects
-
-
-# =====================================================
-# FASE 2 - TRANSITO SICURO ALL'HUB
-# =====================================================
-
-def safe_transit_via_hub(controller,
-                         helmet_center,
-                         tool_pose_ee=CAMERA_POSE_EE,
-                         radius=INSPECTION_RADIUS,
-                         speed=INSPECTION_SPEED):
-    """
-    Porta il robot al punto hub sicuro sopra il casco.
-
-    Viene usata prima del raffinamento e prima della marcatura.
-    Così il robot non passa direttamente da un difetto all'altro.
-    """
-
-    hub_alpha, hub_beta = HUB_ANGLES
-    hub_sph = np.array([radius, hub_alpha, hub_beta])
-
-    print("  [TRANSIT] Movimento verso hub sicuro.")
-
+  
+def point_and_shoot(controller,
+                                 zed,
+                                 runtime,
+                                 image_zed,
+                                 point_cloud,
+                                 test_sph,
+                                 helmet_center=HELMET_CENTER_GLOBAL):
     move_circle_spherical(
         controller=controller,
-        end_sph_coord=hub_sph,
-        radius=radius,
-        tool_pose_ee=tool_pose_ee,
+        end_sph_coord=test_sph,
+        radius=test_sph[0],
+        tool_pose_ee=vb.CAMERA_POSE_EE,
         helmet_center=helmet_center,
-        speed=speed
+        speed=INSPECTION_SPEED
     )
+
+    time.sleep(1)
+
+    H_cam_to_ee = kin.create_homogeneous_matrix(vb.CAMERA_POSE_EE)
+    ee_pose_live = controller.robot.tcp_coord
+    H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_live)
+    H_cam_to_global = H_ee_to_global @ H_cam_to_ee
+
+    defect_list, bgr_image = take_defects_global(
+        runtime,
+        zed,
+        image_zed,
+        point_cloud,
+        H_cam_to_global=H_cam_to_global,
+        attention_radius=GLOBAL_ATTENTION_RADIUS,
+        cylindrical_filter=True,
+        radius=GLOBAL_CYLINDER_RADIUS,
+        height_range=GLOBAL_HEIGHT_RANGE,
+        position_filtering=USE_GLOBAL_POSITION_FILTER,
+        generic_detection=GENERIC_DETECTION
+    )
+
+    return defect_list, bgr_image
 
 
 # =====================================================
-# FASE 3 - RAFFINAMENTO POSIZIONE DIFETTO
+# FASE 2 - RAFFINAMENTO POSIZIONE DIFETTO
 # =====================================================
 
 def refine_defect_position(controller,
@@ -476,7 +329,7 @@ def refine_defect_position(controller,
 
 
 # =====================================================
-# FASE 4 - MARCATURA SINGOLO DIFETTO
+# FASE 3 - MARCATURA SINGOLO DIFETTO
 # =====================================================
 
 def mark_defect(controller,
@@ -583,78 +436,6 @@ def mark_defect(controller,
     #)
 
     print("    Marcatura completata.")
-
-
-# =====================================================
-# FASE 5 - RAFFINAMENTO + MARCATURA DI TUTTI I DIFETTI
-# =====================================================
-
-def refine_and_mark_phase(controller,
-                          zed,
-                          runtime,
-                          image_zed,
-                          point_cloud,
-                          unique_defects,
-                          helmet_center,
-                          generic_detection=False):
-    """
-    Esegue il ciclo completo sui difetti trovati.
-
-    Per ogni difetto:
-    1. Passa dall'hub con la camera.
-    2. Raffina la posizione.
-    3. Se il raffinamento riesce, passa dall'hub con il marker.
-    4. Marca il difetto.
-    """
-
-    print("\nInizio raffinamento + marcatura.")
-    print(f"Difetti da processare: {len(unique_defects)}")
-
-    confirmed_marked = 0
-
-    for i, d in enumerate(unique_defects):
-
-        print("\n" + "-" * 60)
-        print(f"Difetto {i + 1}/{len(unique_defects)}")
-        print(f"Posizione stimata: {np.round(d.pos3d_global, 1)} mm")
-
-        try:
-            # Raffinamento posizione.
-            # move_circle_spherical gestisce autonomamente la sicurezza
-            # della traiettoria, incluse deviazioni via apice se necessario.
-            success = refine_defect_position(
-                controller=controller,
-                zed=zed,
-                runtime=runtime,
-                image_zed=image_zed,
-                point_cloud=point_cloud,
-                defect_obj=d,
-                helmet_center=helmet_center,
-                generic_detection=generic_detection
-            )
-
-            if not success:
-                print("  [SCARTATO] Difetto non confermato dal raffinamento.")
-                continue
-
-            # Marcatura.
-            mark_defect(
-                controller=controller,
-                defect_obj=d,
-                helmet_center=helmet_center
-            )
-
-            confirmed_marked += 1
-
-        except TimeoutError as e:
-            print(f"  [ERRORE] Timeout sul difetto {i + 1}: {e}")
-
-        except Exception as e:
-            print(f"  [ERRORE] Errore imprevisto sul difetto {i + 1}: {e}")
-
-    print("\n" + "=" * 60)
-    print("Fase raffinamento + marcatura completata.")
-    print(f"Difetti marcati: {confirmed_marked}/{len(unique_defects)}")
 
 
 # =====================================================
