@@ -87,6 +87,15 @@ def create_homogeneous_matrix(pose, Inverse=False):
     
         Analiticamente, l'operazione esegue la rotazione del punto tramite
         la sottomatrice 3x3 e la successiva traslazione tramite il vettore T.
+
+    3. INVERSIONE DELLA MATRICE:
+        L'inversione di H (H^-1) consente di trasformare le coordinate da globale a locale.
+        La matrice inversa si calcola come:
+        H^-1 = [ R^T | -R^T @ T ]
+               [  0  |    1     ]
+
+        P_L = H^-1 @ P_G
+
     
     :param pose: Vettore [x, y, z, rx, ry, rz] con angoli espressi in gradi.
                  La convenzione di rotazione è Cardano Z -> Y -> X.
@@ -214,7 +223,23 @@ def compute_ee_pose_for_tool_target(p_obj, r_obj, tool_pose_ee):
     Questa funzione generalizza il calcolo per gestire offset di traslazione e rotazione
     del tool rispetto all'end-effector, usando matrici di trasformazione omogenea.
 
-    L'equazione risolta è: H_ee = H_target @ (H_tool_ee)^-1
+    In particolare sappiamo che per passare un punto (P_L) dal sistema di riferimento del tool (locale) al sistema globale (P_G)
+    dobbiamo applicare la seguente trasformazione:
+
+    P_G = H_ee_global @ H_tool_ee @ P_L
+
+    Dalla quale possiamo estrarre la matrice omogenea di trasformazione da tool a globale:
+
+    H_tool_global = H_ee_global @ H_tool_ee
+
+    In particolare questa matrice contiene la rotazione e la traslazione del sdr del tool.
+    Allora dato che il nostro obiettivo è imporre tali rotazioni e traslazioni al tool, possiamo scrivere:
+
+    H_tool_global = H_obj = H_ee_global @ H_tool_ee
+
+    -> H_obj @ (H_tool_ee)^-1 = H_ee_global @ (H_tool_ee @ (H_tool_ee)^-1) = H_ee_global
+
+    La posa dell'EE per ottenere il target è allora: H_ee = H_obj @ (H_tool_ee)^-1
 
     Input:
     - p_obj: np.array([x, y, z]) posizione target del frame del tool nel globale [mm]
@@ -230,13 +255,13 @@ def compute_ee_pose_for_tool_target(p_obj, r_obj, tool_pose_ee):
     # 2. Matrice omogenea inversa dell'offset del tool rispetto all'EE
     H_tool_ee_inv = create_homogeneous_matrix(tool_pose_ee, Inverse=True)
     
-    # 3. La posa dell'EE è data da: H_ee_global = H_obj * (H_tool_ee)^-1
+    # 3. La posa dell'EE è data da: H_ee_global = H_obj @ (H_tool_ee)^-1
     H_ee_global = H_obj @ H_tool_ee_inv
     
     # 4. Estrazione della traslazione e riconversione della matrice di rotazione in angoli
     t_ee = H_ee_global[0:3, 3]
     R_ee = H_ee_global[0:3, 0:3]
-    r_ee = rot_matrix_to_angles_zyx(R_ee)
+    r_ee = rot_matrix_to_angles_zyx(R_ee) # estrae un set di rotazioni che restituiscono la matrice di rotazione richiesta
     
     return t_ee.tolist() + r_ee.tolist()
 
