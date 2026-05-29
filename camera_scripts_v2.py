@@ -12,7 +12,7 @@ UPPER_GREEN = np.array([85, 255, 255])
 
 # Minimum blob area to accept a green region as valid
 MIN_GREEN_AREA = 150
-MIN_ANOMALY_AREA= 150
+MIN_ANOMALY_AREA = 150
 
 # Nomi delle finestre di OpenCV per il rendering
 WINDOW_NAME_RGB = "Analisi RGB Multipla"
@@ -54,6 +54,9 @@ class defect():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
             
         return debug_img
+    
+    def say_hi(self):
+        print(f"hello")
 
 # ============================================================
 # CAMERA / ZED UTILITY FUNCTIONS

@@ -1,7 +1,7 @@
 import kinematics_v2 as kin
 from robot_control import RobotController
 
-from Variables import HELMET_CENTER_GLOBAL, CAMERA_POSE_EE, MARKER_POSE_EE
+from Variables import HELMET_CENTER_GLOBAL
 
 import cv2
 import numpy as np

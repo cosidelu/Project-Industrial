@@ -1,8 +1,7 @@
 import kinematics_v2 as kin
 from camera_scripts_v2 import take_defects_local, draw_multiple_debug, init_zed, WINDOW_NAME_RGB, WINDOW_NAME_MASK
 import cv2
-from Variables import HELMET_CENTER_GLOBAL
-import Variables as vb
+from Variables import HELMET_CENTER_GLOBAL, CAMERA_POSE_EE
 
 import numpy as np
 
@@ -160,7 +159,7 @@ if __name__ == "__main__":
     # in questo modo le coordinate globali sono calcolate rispetto al trackpad del computer per il testing
 
     ee_pose_global = [300, 500, 300, 0, 90, 0]
-    camera_pose_ee = vb.CAMERA_POSE_EE
+    camera_pose_ee = CAMERA_POSE_EE
 
     H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_global)
     H_cam_to_ee = kin.create_homogeneous_matrix(camera_pose_ee)
