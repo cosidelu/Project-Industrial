@@ -96,6 +96,15 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     
     tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
     start_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
+
+    start_radius = start_angles[0]
+
+    if abs(start_radius - radius) > 20:
+        print(f"  [WARNING] Raggio attuale {start_radius:.1f} mm differisce significativamente dal raggio target {radius:.1f} mm.")
+        input("  Premere Invio per continuare comunque, o nope per annullare...")
+        if input().lower() == "nope":
+            print("  Movimento annullato dall'utente.")
+            return False
     
     start_alpha, start_beta = start_angles[1], start_angles[2]
     end_alpha, end_beta = end_sph_coord[1], end_sph_coord[2]

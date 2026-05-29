@@ -57,7 +57,7 @@ def take_defects_global(runtime, zed, image_zed, point_cloud, H_cam_to_global,
     return defect_list, bgr_image
 
 
-def duplicate_filter(defect_list, distance_threshold=25.0):
+def duplicate_filter(defect_list, distance_threshold=10.0):
     """
     Filtra i difetti duplicati basandosi sulla distanza euclidea tra le loro posizioni globali.
     Restituisce una nuova lista di difetti unici.

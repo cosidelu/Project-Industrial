@@ -1,9 +1,7 @@
-import cv2
 import numpy as np
 import time
 
 import kinematics_v2 as kin
-import Variables as vb
 from Variables import HELMET_CENTER_GLOBAL, CAMERA_POSE_EE, MARKER_POSE_EE
 
 from robot_control import RobotController
@@ -16,9 +14,7 @@ from defects_id_wrapper import (
 
 from camera_scripts_v2 import (
     draw_multiple_debug,
-    init_zed,
-    WINDOW_NAME_RGB,
-    WINDOW_NAME_MASK
+    init_zed
 )
 
 
@@ -36,26 +32,7 @@ GENERIC_DETECTION = False
 IP_ROBOT = "192.168.1.3"
 
 # Raggio della sfera di ispezione attorno al casco [mm].
-INSPECTION_RADIUS = 400
-
-# Punto hub sicuro sopra il casco.
-# Usato come transito tra ispezione, raffinamento e marcatura.
-HUB_ANGLES = (0, 90)
-
-# Waypoint di ispezione.
-# Ogni tupla è:
-# (alpha_deg, beta_deg, is_hub)
-#
-# is_hub=True  -> punto di transito, nessuna foto
-# is_hub=False -> punto di scatto
-INSPECTION_ANGLES = [
-    (0,    90,  True),     # hub iniziale
-    (0,    90,  False),    # scatto 1: dall'alto
-    (0,    45,  False),    # scatto 2
-    (87,   60,  False),    # scatto 3
-    (-87,  60,  False),    # scatto 4
-    (0,    90,  True),     # hub finale
-]
+INSPECTION_RADIUS = 300
 
 # Velocità movimento durante ispezione [mm/s].
 INSPECTION_SPEED = 400
@@ -66,13 +43,10 @@ MARKING_SPEED = 50
 # Raggio usato per il raffinamento.
 # Il robot va nella direzione del difetto, ma resta a questa distanza
 # dal centro casco per sicurezza.
-CLOSE_INSPECTION_RADIUS = 400
+CLOSE_INSPECTION_RADIUS = 300
 
 # Numero di foto ravvicinate per raffinare ogni difetto.
 N_CLOSE_SHOTS = 10
-
-# Soglia per rimuovere duplicati tra più scatti [mm].
-DUPLICATE_THRESHOLD = 25.0
 
 # Soglia per associare un difetto rilevato nel raffinamento
 # al difetto originale [mm].
@@ -92,15 +66,18 @@ MIN_APPROACH_RADIUS = 250
 
 # In ispezione globale il difetto può non essere perfettamente al centro.
 # None = considera tutta l'immagine.
-GLOBAL_ATTENTION_RADIUS = None
+if GENERIC_DETECTION:
+    GLOBAL_ATTENTION_RADIUS = 250 # Tuning: con detection generica serve un po' di attenzione per evitare falsi positivi ai bordi.
+else:
+    GLOBAL_ATTENTION_RADIUS = None
 
 # Filtro cilindrico in frame camera.
 # Tiene solo punti entro questo raggio laterale [mm].
-GLOBAL_CYLINDER_RADIUS = 220.0
+GLOBAL_CYLINDER_RADIUS = 150.0
 
 # Range di profondità lungo Z camera [mm].
 # Tiene solo punti non troppo vicini e non troppo lontani.
-GLOBAL_HEIGHT_RANGE = (150, 700)
+GLOBAL_HEIGHT_RANGE = (100, 300)
 
 
 # -------------------------------
@@ -109,10 +86,10 @@ GLOBAL_HEIGHT_RANGE = (150, 700)
 
 # Nel raffinamento il difetto dovrebbe essere centrato nell'immagine.
 # Quindi restringiamo la ricerca al centro.
-REFINE_ATTENTION_RADIUS = 250
+REFINE_ATTENTION_RADIUS = CLOSE_INSPECTION_RADIUS
 
 # Cilindro più stretto per il raffinamento [mm].
-REFINE_CYLINDER_RADIUS = 150.0
+REFINE_CYLINDER_RADIUS = 50.0
 
 # Range di profondità più stretto per il raffinamento [mm].
 REFINE_HEIGHT_RANGE = (50, 300)
@@ -138,18 +115,23 @@ def point_and_shoot(controller,
                                  point_cloud,
                                  test_sph,
                                  helmet_center=HELMET_CENTER_GLOBAL):
-    move_circle_spherical(
+    
+    if not move_circle_spherical(
         controller=controller,
         end_sph_coord=test_sph,
         radius=test_sph[0],
-        tool_pose_ee=vb.CAMERA_POSE_EE,
+        tool_pose_ee=CAMERA_POSE_EE,
         helmet_center=helmet_center,
         speed=INSPECTION_SPEED
-    )
+        ):
+        print(f"  [SKIP] Impossibile raggiungere la posizione di scatto {test_sph} in sicurezza.")
+        
+        time.sleep(1)
+        return [], None, None, None
 
     time.sleep(1)
 
-    H_cam_to_ee = kin.create_homogeneous_matrix(vb.CAMERA_POSE_EE)
+    H_cam_to_ee = kin.create_homogeneous_matrix(CAMERA_POSE_EE)
     ee_pose_live = controller.robot.tcp_coord
     H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_live)
     H_cam_to_global = H_ee_to_global @ H_cam_to_ee
@@ -168,7 +150,13 @@ def point_and_shoot(controller,
         generic_detection=GENERIC_DETECTION
     )
 
-    return defect_list, bgr_image
+    debug_img, mask_bgr = draw_multiple_debug(
+        bgr_image,
+        defect_list,
+        show_global=True
+    )
+
+    return defect_list, debug_img, mask_bgr, bgr_image
 
 
 # =====================================================
@@ -184,7 +172,7 @@ def refine_defect_position(controller,
                            helmet_center = HELMET_CENTER_GLOBAL,
                            close_radius=CLOSE_INSPECTION_RADIUS,
                            n_shots=N_CLOSE_SHOTS,
-                           generic_detection=False):
+                           generic_detection=GENERIC_DETECTION):
     """
     Raffina la posizione 3D di un singolo difetto.
 
@@ -196,22 +184,26 @@ def refine_defect_position(controller,
     5. Per ogni foto trova il difetto più vicino alla posizione precedente.
     6. Media le posizioni valide.
     7. Aggiorna defect_obj.pos3d_global.
+
+    Ritorna true se ha aggiornato il difetto, false se ha saltato il raffinamento per qualche motivo 
+    (es. difetto senza pos3d_global, impossibile raggiungere posizione ravvicinata, nessun match valido nei close shots).
+
+    Quindi va chiamata in uno statement if not:
+    if not refine_defect_position(...):
+        print("  [SKIP] Raffinamento difetto saltato.")
     """
 
-    if defect_obj.pos3d_global is None:
-        print("  [SKIP] Difetto senza pos3d_global.")
+    if defect_obj.sph_coord is None:
+        print("  [SKIP] Difetto senza sph_coord.")
         return False
 
     H_cam_to_ee = kin.create_homogeneous_matrix(CAMERA_POSE_EE)
 
     # Coordinate sferiche della posizione stimata del difetto.
-    r_def, alpha_deg, beta_deg = kin.to_helmet_angles(
-        defect_obj.pos3d_global,
-        helmet_center
-    )
+    r_def, alpha_deg, beta_deg = defect_obj.sph_coord
 
     print(
-        f"  Raffinamento difetto:"
+        f" Raffinamento difetto:"
         f" r_stimato={r_def:.1f}mm,"
         f" alpha={alpha_deg:.1f}°,"
         f" beta={beta_deg:.1f}°"
@@ -219,32 +211,34 @@ def refine_defect_position(controller,
 
     # Punto di osservazione ravvicinato:
     # stesso alpha/beta del difetto, ma raggio fissato a close_radius.
-    close_sph = np.array([close_radius, alpha_deg, beta_deg])
 
-    print(f"  Movimento camera a r={close_radius}mm nella direzione del difetto.")
-
-    move_circle_spherical(
+    if not move_circle_spherical(
         controller=controller,
-        end_sph_coord=close_sph,
+        end_sph_coord=defect_obj.sph_coord,
         radius=close_radius,
         tool_pose_ee=CAMERA_POSE_EE,
         helmet_center=helmet_center,
         speed=INSPECTION_SPEED
-    )
+    ):
+        print("  [SKIP] Impossibile raggiungere la posizione ravvicinata in sicurezza.")
+        return False
+    else:
+        print(f"  Movimento camera a r={close_radius}mm nella direzione del difetto.")
+
 
     time.sleep(1)
-
-    # Posa reale dopo il movimento.
-    ee_pose_live = controller.robot.tcp_coord
-    H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_live)
-    H_cam_to_global = H_ee_to_global @ H_cam_to_ee
 
     refined_positions = []
 
     for shot_idx in range(n_shots):
 
+        # Posa reale dopo il movimento.
+        ee_pose_live = controller.robot.tcp_coord
+        H_ee_to_global = kin.create_homogeneous_matrix(ee_pose_live)
+        H_cam_to_global = H_ee_to_global @ H_cam_to_ee
+
         # Acquisizione + detection con parametri più stretti.
-        defect_list_shot, bgr_image = take_defects_global(
+        defect_list_shot, _ = take_defects_global(
             runtime,
             zed,
             image_zed,
@@ -265,6 +259,8 @@ def refine_defect_position(controller,
             generic_detection=generic_detection
         )
 
+        n_def_shot = len(defect_list_shot)
+        print(f"    Scatto {shot_idx + 1}/{n_shots}: rilevati {n_def_shot} difetti.")
         best_match = None
         best_dist = float("inf")
 
@@ -286,29 +282,12 @@ def refine_defect_position(controller,
         else:
             found_str = "non trovato"
 
-        debug_img, mask_bgr = draw_multiple_debug(
-            bgr_image,
-            defect_list_shot,
-            show_global=True
-        )
-
-        cv2.imshow(WINDOW_NAME_MASK, mask_bgr)
-        cv2.imshow(WINDOW_NAME_RGB, debug_img)
-        cv2.waitKey(50)
-
         print(f"    Scatto {shot_idx + 1}/{n_shots}: {found_str}")
 
-        # Stampa valori utili per tuning.
-        for idx, d in enumerate(defect_list_shot):
-            if d.pos3d_camera is not None:
-                radial_camera = np.sqrt(d.pos3d_camera[0] ** 2 + d.pos3d_camera[1] ** 2)
-                print(f"      Difetto rilevato {idx + 1}:")
-                print(f"        centroid: {d.centroid}")
-                print(f"        pos3d_camera: {np.round(d.pos3d_camera, 1)}")
-                print(f"        Z camera: {d.pos3d_camera[2]:.1f} mm")
-                print(f"        radial camera: {radial_camera:.1f} mm")
-                print(f"        pos3d_global: {np.round(d.pos3d_global, 1)}")
-
+        # Stampa valori del best match
+        if best_match is not None:
+            best_match.say_hi(Name=f"Best Match #{shot_idx + 1}")
+        
     if len(refined_positions) == 0:
         print("  [ATTENZIONE] Nessuno scatto valido durante il raffinamento.")
         return False
@@ -354,29 +333,46 @@ def mark_defect(controller,
 
     if defect_obj.pos3d_global is None:
         print("  [SKIP] Difetto senza coordinate globali.")
-        return
+        return False
+    
+    def_sph = defect_obj.sph_coord
+
+    # INTRODURRE IL CLIPPING PER ALPHA SUPERIORI A 90°
+    # aggiungere costrain sulla z del difetto
+    
+    # movimento circolare alla posizione di scatto posizionando l'occhio
+    if not move_circle_spherical(
+        controller=controller,
+        end_sph_coord=def_sph,
+        radius=CLOSE_INSPECTION_RADIUS,
+        tool_pose_ee=CAMERA_POSE_EE,
+        helmet_center=helmet_center,
+        speed=INSPECTION_SPEED
+    ):
+        print("  [SKIP] Impossibile raggiungere la posizione di mark in sicurezza.")
+        return False
+    else:
+        print(f"  Movimento camera a r={CLOSE_INSPECTION_RADIUS}mm nella direzione del difetto.")
+
 
     pos = defect_obj.pos3d_global
 
     print(f"  Avvio marcatura difetto in {np.round(pos, 1)} mm")
 
     # Coordinate sferiche del difetto.
-    r_def, alpha_deg, beta_deg = kin.to_helmet_angles(
-        pos,
-        helmet_center
-    )
+    r_def, alpha_deg, beta_deg = defect_obj.sph_coord
 
     # Posa target del marker sul difetto.
-    p_obj, r_obj = kin.to_helmet_coordinates(
+    _, r_obj = kin.to_helmet_coordinates(
         [r_def, alpha_deg, beta_deg],
         helmet_center
     )
 
     ee_marking_pose = kin.compute_ee_pose_for_tool_target(
-        p_obj,
+        pos,
         r_obj,
         tool_pose_ee=MARKER_POSE_EE
-    )
+    ) #punta del marker che tocca il difetto
 
     # Punto di approccio:
     # stessa direzione del difetto, ma più lontano dal centro casco.
@@ -386,6 +382,9 @@ def mark_defect(controller,
         [r_approach, alpha_deg, beta_deg],
         helmet_center
     )
+
+    # se c'è clipping:
+    # p_approach_obj[2] = pos[2] # Mantieni la stessa altezza Z del difetto, per sicurezza. In questo modo il marker si avvicina al difetto in piano orizzontale, riducendo il rischio di collisioni verticali con il casco.
 
     ee_approach_pose = kin.compute_ee_pose_for_tool_target(
         p_approach_obj,
@@ -398,22 +397,13 @@ def mark_defect(controller,
 
     # Salva la posa attuale come punto di ritorno post-marking,
     # PRIMA di qualsiasi movimento verso il difetto.
-    #pre_marking_pose = list(controller.robot.tcp_coord)
+    pre_marking_pose = list(controller.robot.tcp_coord)
 
-    # Movimento al punto di approccio.
-    if not move_circle_spherical(
-        controller=controller,
-        end_sph_coord=[r_approach, alpha_deg, beta_deg],
-        radius=250,
-        tool_pose_ee=MARKER_POSE_EE,
-        helmet_center=helmet_center,
+    controller.move_ptp(
+        ee_approach_pose,
         speed=marking_speed
-    ):
-        print("  [SKIP] Impossibile raggiungere il punto di approccio in sicurezza.")
-        return False
+    )
     
-    pre_marking_pose = controller.robot.tcp_coord
-
     # Movimento lineare lento fino al difetto (tocco).
     print("    Avanzamento lineare al difetto.")
     controller.move_line(
@@ -424,15 +414,15 @@ def mark_defect(controller,
     # Arretramento lineare al punto di approccio.
     print("    Arretramento lineare.")
     controller.move_line(
-        pre_marking_pose,
+        ee_approach_pose,
         speed=marking_speed
     )
 
     # PTP di ritorno alla posa precedente al marking.
-    #print("    Ritorno PTP alla posa pre-marking.")
-    #controller.move_ptp(
-    #    pre_marking_pose,
-    #   speed=marking_speed
-    #)
+    #print("    Ritorno PTP alla posa pre-marking, che è sulla sfera del casco.")
+    controller.move_ptp(
+        pre_marking_pose,
+        speed=marking_speed
+    )
 
     print("    Marcatura completata.")
