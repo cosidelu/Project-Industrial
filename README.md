@@ -210,29 +210,42 @@ print(f"Rilevati {len(unique_defects)} difetti univoci dopo il filtraggio.")
 
 ---
 
-## 5. `inspection_and_marking.py` (Pipeline Completa di Ispezione e Marcatura)
-**Scopo:** Coordina l'intero flusso operativo dal primo scatto con la ZED fino alla marcatura finale del difetto con il pennarello.
+## 5. `inspection_and_marking.py` (Funzioni ad alto livello) e `tests_inspection_marking.ipynb`
+**Scopo:** `inspection_and_marking.py` fornisce le macro-funzioni (ispezione, raffinamento, marcatura) per operare sui difetti. Tali funzioni sono pensate per essere orchestrate interattivamente dal notebook `tests_inspection_marking.ipynb`, che ne gestisce il flusso logico, l'accumulo dei risultati e le conferme utente.
 
 ### Funzioni principali
-- `inspection_phase(...)`: esegue l'ispezione globale sul casco muovendo il robot lungo una sequenza di waypoint sferici, acquisendo immagini e point cloud, rilevando i difetti e calcolando le loro coordinate globali.
-- `safe_transit_via_hub(...)`: sposta il robot in un punto hub sicuro sopra il casco per separare i movimenti di ispezione, raffinamento e marcatura.
-- `refine_defect_position(...)`: per ogni difetto stimato, esegue una serie di scatti ravvicinati da una distanza di lavoro fissa, associa i rilevamenti migliori e media le posizioni globali per migliorare l'accuratezza.
-- `mark_defect(...)`: calcola la posa del marker, va al punto di approccio con `move_ptp`, avanza linearmente sul difetto con `move_line` e poi ritorna indietro.
-- `refine_and_mark_phase(...)`: processa tutti i difetti unici trovati, facendo transiti sicuri con la camera e con il marker, e marcando solo i difetti confermati.
+- `move_to_hub(controller, hub=[0, 0, 90])`:
+  - **Input:** `controller` (oggetto `RobotController`), `hub` (lista coordinate sferiche, opzionale).
+  - **Output:** Nessuno (solleva eccezione se il movimento non è sicuro).
+  - **Descrizione:** Sposta il robot in un punto hub sicuro sopra il casco, per separare i macro-movimenti tra i vari scatti ed evitare transizioni dirette pericolose sulla cupola.
+- `point_and_shoot(controller, zed, runtime, image_zed, point_cloud, test_sph, ...)`:
+  - **Input:** Sensori ZED e `controller`, `test_sph` (posizione sferica target di scatto `[r, alpha, beta]`).
+  - **Output:** Tupla `(defect_list, debug_img, mask_bgr, bgr_image)` contenente la lista dei difetti (oggetti `defect`) trovati e le immagini per il debug.
+  - **Descrizione:** Sposta il robot nella posizione indicata e richiama `take_defects_global` per scattare ed estrarre la posa 3D locale e globale.
+- `refine_defect_position(controller, zed, runtime, image_zed, point_cloud, defect_obj, ...)`:
+  - **Input:** Sensori ZED, `controller`, `defect_obj` (oggetto difetto da raffinare).
+  - **Output:** Valore Booleano (`True` se raffinato con successo, `False` se nessun match valido è stato trovato o se la posa è irraggiungibile). Modifica in-place `defect_obj.pos3d_global`.
+  - **Descrizione:** Per ogni difetto stimato, esegue una serie di scatti ravvicinati da una distanza fissa, associa i rilevamenti migliori e ne media le posizioni globali per massimizzare l'accuratezza (riducendo il rumore del depth sensor).
+- `mark_defect(controller, defect_obj, helmet_center, ...)`:
+  - **Input:** `controller`, `defect_obj` (oggetto difetto con posa 3D validata), coordinate globali del centro del casco.
+  - **Output:** Valore Booleano (`True` se marcatura completata, `False` in caso di difetto non valido o traiettoria insicura).
+  - **Descrizione:** Calcola la posa target del marker. Va al punto di pre-approccio, avanza linearmente sul difetto collaudato (`move_line`) e torna indietro. Salva dinamicamente la posa precedente per garantire un rientro fuori ingombro.
+- `show_debug_matplotlib(debug_img, mask_bgr, title)`:
+  - **Input:** Immagini in formato array `numpy` (RGB/BGR o Maschere) e una stringa `title`.
+  - **Output:** Nessuno.
+  - **Descrizione:** Utilità di rendering per stampare a schermo le maschere in linea sul Jupyter Notebook sfruttando `matplotlib`.
 
 ### Parametri di tuning principali
 - `GENERIC_DETECTION`: abilita il rilevamento generico degli anomalie cromatiche invece della sola ricerca del verde.
-- `INSPECTION_RADIUS`, `HUB_ANGLES` e `INSPECTION_SPEED`: definiscono la traiettoria sferica di ispezione.
-- `REFINE_ATTENTION_RADIUS`, `REFINE_CYLINDER_RADIUS`, `REFINE_HEIGHT_RANGE`: restringono la ricerca durante il raffinamento per aumentare la precisione.
-- `DUPLICATE_THRESHOLD`, `ASSOCIATION_THRESHOLD`: gestiscono il merging e l'associazione tra difetti rilevati in scatti diversi.
+- `INSPECTION_RADIUS`, `INSPECTION_POSITIONS` e `INSPECTION_SPEED`: definiscono il set di posizioni sferiche ottimali per gli scatti globali della camera.
+- `CLOSE_INSPECTION_RADIUS`, `REFINE_ATTENTION_RADIUS`, `REFINE_CYLINDER_RADIUS`: restringono la ricerca spaziale durante il raffinamento al solo difetto atteso.
+- `DUPLICATE_DISTANCE`, `ASSOCIATION_THRESHOLD`: distanze in millimetri utilizzate per il filtraggio e l'associazione nei frame consecutivi.
 
-### Workflow completo
-1. `main()` connette il robot e inizializza la ZED.
-2. Il robot va in posizione iniziale e avvia `inspection_phase(...)`.
-3. I difetti globali vengono filtrati e resi unici.
-4. L'operatore conferma i risultati.
-5. `refine_and_mark_phase(...)` raffina ogni difetto e ne esegue la marcatura.
-6. Il sistema riporta il robot in posizione iniziale, disconnette e chiude la ZED.
+### Workflow nel Notebook
+1. **Inizializzazione**: connessione ai sensori ZED e al controller robot, riposizionamento in `LOOK_DOWN`.
+2. **Ispezione Globale**: iterazione su `INSPECTION_POSITIONS` mediante `point_and_shoot` con pause e scatti comandati a step, accumulando e filtrando i cloni.
+3. **Raffinamento**: per ogni difetto univoco viene richiamato `refine_defect_position` con N scatti ravvicinati per ricalcolare `pos3d_global`.
+4. **Marcatura**: interazione di controllo per marcare fisicamente tutti o alcuni dei difetti confermati richiamando `mark_defect`.
 
 ---
 
