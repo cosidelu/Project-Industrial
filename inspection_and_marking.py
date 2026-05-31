@@ -134,7 +134,18 @@ def show_debug_matplotlib(debug_img=None, mask_bgr=None, title="Debug"):
         plt.axis("off")
         plt.show()
 
+def move_to_hub(controller, hub = [0, 0, 90]):
+    print(f"Ritorno alla posizione di hub {hub}.")
 
+    if not move_circle_spherical(
+        controller=controller,
+        end_sph_coord=hub,
+        radius=INSPECTION_RADIUS,
+        tool_pose_ee=CAMERA_POSE_EE,
+        helmet_center=HELMET_CENTER_GLOBAL,
+        speed=INSPECTION_SPEED
+        ):
+        raise ValueError(f"Impossibile raggiungere la posizione di hub {hub} in sicurezza, intervento manuale richiesto.")
 # =====================================================
 # FASE 1 - ISPEZIONE GLOBALE
 # =====================================================
@@ -145,12 +156,13 @@ def point_and_shoot(controller,
                                  image_zed,
                                  point_cloud,
                                  test_sph,
-                                 helmet_center=HELMET_CENTER_GLOBAL):
+                                 helmet_center=HELMET_CENTER_GLOBAL,
+                                 insp_radius=INSPECTION_RADIUS):
     
     if not move_circle_spherical(
         controller=controller,
         end_sph_coord=test_sph,
-        radius=test_sph[0],
+        radius=insp_radius,
         tool_pose_ee=CAMERA_POSE_EE,
         helmet_center=helmet_center,
         speed=INSPECTION_SPEED
