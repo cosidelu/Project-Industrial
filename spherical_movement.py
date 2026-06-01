@@ -59,11 +59,11 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
     PERCHé FUNZIONI IL MOVIMENTO CILINDRICO è IMPORTANTE CHE LA IL end_sph_coord[0] SIA IL RAGGIO DEL DIFETTO-PUNTO CHE VOGLIO GUARDARE
     """
-
-    Z_CYLINDER = helmet_center[2] + 50  # in questo modo evitiamo a prescindere i gimball lock
+    Z_DIST_CYLTOCENTER = 50  # distanza verticale tra il centro del casco e la giunzione cilindro-sfera, da tunare in base alla forma del casco
+    Z_CYLINDER = helmet_center[2] + Z_DIST_CYLTOCENTER  # in questo modo evitiamo a prescindere i gimball lock
     SPHERE_RADIUS = radius 
 
-    R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_CYLINDER**2)  # Raggio del cilindro alla giunzione con la sfera
+    R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_DIST_CYLTOCENTER**2)  # Raggio del cilindro alla giunzione con la sfera
 
     # NB: questi parametri vanno tunati in modo che il cilindro non collida con il casco
 
@@ -100,11 +100,25 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     
     tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
 
+    start_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
+    start_alpha, start_beta = start_angles[1], start_angles[2]
+    end_alpha, end_beta = end_sph_coord[1], end_sph_coord[2]
+    p_end_def, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
+
+    # --- 0. Controllo Sicurezza Destinazione --- 
+    if angles_unsafe(end_alpha, end_beta):
+        print(f"  [SKIP] Destinazione (alpha={end_alpha:.1f}°, beta={end_beta:.1f}°) fuori limiti sicurezza.")
+        return False
+    
+    # check se la z del difetto è troppo in basso
+    if p_end_def[2] < Z_LIMIT:
+        print(f"  [ERROR] Destinazione finale a z={p_end_def[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
+        return False
 
     # --- Verfico se sto partendo dal cilindro e se si mi sposto sulla sfera e aggiorno le coordinate globali del tool ---
 
     if tool_position_global[2] < Z_CYLINDER:
-        print(f"   [CYL] Partenza da cilindro, mi sposto prima sulla sfera a z={Z_CYLINDER}mm")
+        print(f"  [CYL] Partenza da cilindro, mi sposto prima sulla sfera a z={Z_CYLINDER}mm")
         tool_position_global[2] = Z_CYLINDER
         cyl_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
 
@@ -138,14 +152,6 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     
     # --- Controllo se la fine è nel ciilindro
     ends_on_cylinder = False
-    # calcolo la z finale del punto target SUL CASCO
-    p_end_def, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
-
-
-    # check se la z del difetto è troppo in basso
-    if p_end_def[2] < Z_LIMIT:
-        print(f"  [ERROR] Destinazione finale a z={p_end_def[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
-        return False
     
     # check se la z del difetto
     if p_end_def[2] < Z_CYLINDER:
@@ -161,9 +167,9 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         p_end_cyl[2] = p_end_def[2]  # z del punto dove posizionerò il tool sul cilindro, uguale alla z del difetto
 
         #trovo anche le rotazioni desiderate dell'ee -> z verso il centro parallela a terra e x verso il basso (CREDO DA VERIFICARE)
-        x_axis = np.array(0, 0, -1)  # x verso il basso
-        z_axis = np.array(-np.sin(gamma), -np.cos(gamma), 0) # z verso il centro del casco, parallelo a terra
-        y_axis = np.cross(z_axis, x_axis)  # y per completare la base ortonormale
+        y_axis = np.array([0, 0, -1])  # y verso il basso
+        z_axis = np.array([-np.sin(gamma), -np.cos(gamma), 0]) # z verso il centro del casco, parallelo a terra
+        x_axis = np.cross(y_axis, z_axis)  # x per completare la base ortonormale
 
         # FORSE QUA GLI ANGOLI VANNO INVERTITI PERCHé SIAMO QUASI SEMPRE NELLA PARTE IN CUI LA TELECAMERA è A TESTA IN GIù
 
@@ -200,19 +206,23 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         mid_b = np.mean([start_beta, end_beta])
         actually_move(start_alpha, start_beta, mid_a, mid_b)
         actually_move(mid_a, mid_b, end_alpha, end_beta)
-        return True
-
-    # --- 5. Esecuzione Traiettoria Diretta ---
-    actually_move(start_alpha, start_beta, end_alpha, end_beta)
+    else:
+        actually_move(start_alpha, start_beta, end_alpha, end_beta)
 
     # se il punto finale era sul cilindro end alpha ed end beta sono il punto nella giunzione tra cilindro e sfera,
     # quindi ho bisogno di un ultimo movimento lineare per scendere sul cilindro
 
     if ends_on_cylinder:
-        print(f"  [CYL] Punto finale sul cilindro, esecuzione movimento lineare finale.")
+        print(f"  [CYL] Punto finale sul cilindro, esecuzione movimento lineare finale verso {np.round(p_end_cyl, 2)}.")
         controller.move_line(ee_end_cyl, speed=speed)
         
-
+    print(f"  [SUCCESS] Movimento completato verso il difetto in (alpha={end_alpha:.1f}°, beta={end_beta:.1f}°).")
+    #riprendiamo le coordinate e plottiamole per debug
+    ee_pose_final = controller.robot.tcp_coord
+    H_ee_to_glob_final = kin.create_homogeneous_matrix(ee_pose_final)
+    tool_position_global_final = kin.homogeneous_trasform(H_ee_to_glob_final, tool_position_ee)
+    print(f"  Posizione finale del tool in coordinate globali: {np.round(tool_position_global_final, 2)}")
+    print(f"  Posizione del punto da guardare in coordinate globali: {np.round(p_end_def, 2)}")
     return True
 
 
