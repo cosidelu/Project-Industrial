@@ -18,8 +18,20 @@ CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera
 MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
 
 BASE_MARKER_POSE = [x, y, z, 0, 0, 0]
-H_marker = kin.compute_homogeneous_transform(BASE_MARKER_POSE)
+H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
 
+
+
+H_marker_inv = kin.create_homogeneous_matrix(BASE_MARKER_POSE, Inverse=True)
+H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
+
+def local_start_marker(global_pose):
+    p_local = kin.homogeneous_trasform(H_marker_inv, global_pose[:3]) #transform delle x,y,z
+    return p_local.tolist() + global_pose[3:] #return con le 3 posizioni sovrascritte convertite in lista + le rotaz originali del p.to
+
+def global_final_marker(local_pose):
+    p_global = kin.homogeneous_trasform(H_marker, local_pose[:3])
+    return p_global.tolist() + local_pose[3:]
 
 # Da qua in poi vanno cambiate trasformale prima in relative al marker nella posizione iniziale
 # poi definisci la nuova posizone del marker ruotato
