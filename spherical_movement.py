@@ -136,37 +136,44 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     # --- Controllo se la fine è nel ciilindro
     ends_on_cylinder = False
     # calcolo la z finale del punto target SUL CASCO
-    p_end, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
+    p_end_def, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
 
-    if p_end[2] < Z_LIMIT:
-        print(f"  [ERROR] Destinazione finale a z={p_end[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
+    if p_end_def[2] < Z_LIMIT:
+        print(f"  [ERROR] Destinazione finale a z={p_end_def[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
         return False
     
-    if p_end[2] < Z_CYLINDER:
-        print(f"  [CYL] Destinazione finale prevista a z={p_end[2]:.1f} mm, che è sotto la soglia cilindrica di {Z_CYLINDER} mm.")
+    if p_end_def[2] < Z_CYLINDER:
+        print(f"  [CYL] Destinazione finale prevista a z={p_end_def[2]:.1f} mm, che è sotto la soglia cilindrica di {Z_CYLINDER} mm.")
         ends_on_cylinder = True
         p_end_cyl = np.zeros(3)
         
         #calcolo il punto finale di ispezione sul cilindro alla stessa altezza del difetto
-        gamma = np.arctan2(p_end[0] - helmet_center[0], p_end[1] - helmet_center[1])  # angolo polare del punto di destinazione
+        gamma = np.arctan2(p_end_def[0] - helmet_center[0], p_end_def[1] - helmet_center[1])  # angolo polare del punto di destinazione
 
         p_end_cyl[0] = helmet_center[0] + R_CYLINDER * np.sin(gamma)  # x del punto dove posizionerò il tool sul cilindro
         p_end_cyl[1] = helmet_center[1] + R_CYLINDER * np.cos(gamma)  # y del punto dove posizionerò il tool sul cilindro
-        p_end_cyl[2] = p_end[2]  # z del punto dove posizionerò il tool sul cilindro, uguale alla z del difetto
+        p_end_cyl[2] = p_end_def[2]  # z del punto dove posizionerò il tool sul cilindro, uguale alla z del difetto
 
         #trovo anche le rotazioni desiderate dell'ee -> z verso il centro parallela a terra e x verso il basso (CREDO DA VERIFICARE)
         x_axis = np.array(0, 0, -1)  # x verso il basso
         z_axis = np.array(-np.sin(gamma), -np.cos(gamma), 0) # z verso il centro del casco, parallelo a terra
         y_axis = np.cross(z_axis, x_axis)  # y per completare la base ortonormale
 
+        FORSE QUA GLI ANGOLI VANNO INVERTITI PERCHé SIAMO QUASI SEMPRE NELLA PARTE IN CUI LA TELECAMERA è A TESTA IN GIù
+
         cyl_R_mat = np.column_stack((x_axis, y_axis, z_axis))  # matrice di rotazione per l'orientamento cilindrico
-        r_end_cyl = kin.rot_matrix_to_angles_zyx(cyl_R_mat)
+        r_end_cyl = kin.rot_matrix_to_angles_zyx(cyl_R_mat) # rotazione obiettivo del tool per il movimento cilindrico
 
         #sovrascrivo end_alpha e end_beta con quelli del punto di intersezione tra cilindro e sfera
-        p_intersection = np.array([p_end[0], p_end[1], Z_CYLINDER])
+        p_intersection = np.array([p_end_cyl[0], p_end_cyl[1], Z_CYLINDER])
         end_alpha, end_beta = kin.to_helmet_angles(p_intersection, helmet_center)[1:]
+        # in questo modo mi muoverò sfericamente al punti di intersezione
     
     # --- 3. Controllo Sicurezza Traiettoria ---
+    if angles_unsafe(end_alpha, end_beta):
+        print(f"  [SKIP] Destinazione (alpha={end_alpha:.1f}°, beta={end_beta:.1f}°) fuori limiti sicurezza.")
+        # nel dubbio richeckiamo se la traiettoria è sicura, se no skippiamo
+        return False
     # Se il segmento taglia una zona pericolosa, deviamo passano per l'apice (0, 90) che è sempre sicuro.
     if is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta):
         print(f"  [SAFETY] Traiettoria non sicura. Deviazione tramite l'apice del casco.")
