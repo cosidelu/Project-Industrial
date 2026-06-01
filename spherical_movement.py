@@ -7,11 +7,7 @@ import cv2
 import numpy as np
 import time
 
-# Altezza del cilindro in cui switchamo a movimento cilindrico DA REGOLARE
-# DEVE ESSERE MAGGIORE DELLA Z DI HELMET CENTER PER EVITARE IL LOCK
-Z_CYLINDER = HELMET_CENTER_GLOBAL[2] + 50  
-SPHERE_RADIUS = 300 #DEVE ESSERE UGUALE ALL'INSPECTION RADIUS
-R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_CYLINDER**2)  # Raggio del cilindro alla giunzione con la sfera
+
 Z_LIMIT = 150  # Limite assoluto di altezza sotto il quale non è sicuro muoversi (es. base del casco o tavolo)
 
 def angles_unsafe(alpha, beta):
@@ -64,6 +60,13 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     PERCHé FUNZIONI IL MOVIMENTO CILINDRICO è IMPORTANTE CHE LA IL end_sph_coord[0] SIA IL RAGGIO DEL DIFETTO-PUNTO CHE VOGLIO GUARDARE
     """
 
+    Z_CYLINDER = helmet_center[2] + 50  # in questo modo evitiamo a prescindere i gimball lock
+    SPHERE_RADIUS = radius 
+
+    R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_CYLINDER**2)  # Raggio del cilindro alla giunzione con la sfera
+
+    # NB: questi parametri vanno tunati in modo che il cilindro non collida con il casco
+
     def actually_move(start_a, start_b, end_a, end_b, force_line=False):
         """
         Esegue fisicamente il movimento. Utilizza move_circle calcolando il midpoint,
@@ -109,7 +112,7 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         actually_move(0,0, cyl_angles[1], cyl_angles[2], force_line=True)
 
         time.sleep(1)  # breve pausa per stabilizzare il movimento
-        # Ricalcolo la posa finale del tool dopo la deviazione cilindrica ne dubbio
+        # Ricalcolo la posa finale del tool dopo la deviazione cilindrica nel dubbio
         ee_pose = controller.robot.tcp_coord
         H_ee_to_glob = kin.create_homogeneous_matrix(ee_pose)
         tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
@@ -128,7 +131,7 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     start_alpha, start_beta = start_angles[1], start_angles[2]
     end_alpha, end_beta = end_sph_coord[1], end_sph_coord[2]
 
-    # --- 2. Controllo Sicurezza Destinazione --- TENIAMO GLI ANGOLI PER LE ZONE DI SICUREZZA MA VANNO AGGIORNATI
+    # --- 2. Controllo Sicurezza Destinazione --- 
     if angles_unsafe(end_alpha, end_beta):
         print(f"  [SKIP] Destinazione (alpha={end_alpha:.1f}°, beta={end_beta:.1f}°) fuori limiti sicurezza.")
         return False
@@ -138,10 +141,13 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     # calcolo la z finale del punto target SUL CASCO
     p_end_def, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
 
+
+    # check se la z del difetto è troppo in basso
     if p_end_def[2] < Z_LIMIT:
         print(f"  [ERROR] Destinazione finale a z={p_end_def[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
         return False
     
+    # check se la z del difetto
     if p_end_def[2] < Z_CYLINDER:
         print(f"  [CYL] Destinazione finale prevista a z={p_end_def[2]:.1f} mm, che è sotto la soglia cilindrica di {Z_CYLINDER} mm.")
         ends_on_cylinder = True
@@ -159,10 +165,13 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         z_axis = np.array(-np.sin(gamma), -np.cos(gamma), 0) # z verso il centro del casco, parallelo a terra
         y_axis = np.cross(z_axis, x_axis)  # y per completare la base ortonormale
 
-        FORSE QUA GLI ANGOLI VANNO INVERTITI PERCHé SIAMO QUASI SEMPRE NELLA PARTE IN CUI LA TELECAMERA è A TESTA IN GIù
+        # FORSE QUA GLI ANGOLI VANNO INVERTITI PERCHé SIAMO QUASI SEMPRE NELLA PARTE IN CUI LA TELECAMERA è A TESTA IN GIù
 
         cyl_R_mat = np.column_stack((x_axis, y_axis, z_axis))  # matrice di rotazione per l'orientamento cilindrico
         r_end_cyl = kin.rot_matrix_to_angles_zyx(cyl_R_mat) # rotazione obiettivo del tool per il movimento cilindrico
+
+        # alla fine farò un movimento lineare fino a questa pose
+        ee_end_cyl = kin.compute_ee_pose_for_tool_target(p_end_cyl, r_end_cyl, tool_pose_ee=tool_pose_ee)
 
         #sovrascrivo end_alpha e end_beta con quelli del punto di intersezione tra cilindro e sfera
         p_intersection = np.array([p_end_cyl[0], p_end_cyl[1], Z_CYLINDER])
@@ -200,7 +209,8 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     # quindi ho bisogno di un ultimo movimento lineare per scendere sul cilindro
 
     if ends_on_cylinder:
-        print("hi")
+        print(f"  [CYL] Punto finale sul cilindro, esecuzione movimento lineare finale.")
+        controller.move_line(ee_end_cyl, speed=speed)
         
 
     return True
@@ -233,7 +243,7 @@ if __name__ == "__main__":
     colors = np.zeros((n_points, n_points, 3))
 
     # 2. Calcolo dei punti 3D e assegnazione dei colori della mesh
-    radius = SPHERE_RADIUS - 100
+    radius = 200
     
     for i in range(n_points):
         for j in range(n_points):

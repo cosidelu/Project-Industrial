@@ -62,7 +62,7 @@ class RobotController:
             if time.time() - start > self.default_timeout:
                 raise TimeoutError(f"Target non raggiunto. Errore: {np.round(errors, 2)}")
             
-            time.sleep(0.2) #to not overload the robot with status requests
+            time.sleep(0.1) #to not overload the robot with status requests
 
     def move_ptp(self, pose, speed=SPEED, data_format="CPP"):
         """Esegue un movimento PTP (Punto-Punto) e attende il completamento"""

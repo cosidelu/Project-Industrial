@@ -31,6 +31,7 @@ class defect():
         self.pos3d_camera = None           # np.array([x, y, z]) in millimeters, to be calculated from the point cloud and the mask
         self.pos3d_global = None           # np.array([x, y, z]) in millimeters, to be calculated by transforming the camera coordinates into the global robot coordinates
         self.sph_coord = None              # np.array([r, alpha, beta]) in millimeters and degrees, to be calculated by converting the global Cartesian coordinates into spherical coordinates
+        self.refined = False               # boolean flag to indicate if the defect has been refined with a second measurement
 
     def img(self):
         """
@@ -74,6 +75,7 @@ class defect():
 
         if self.pos3d_global is not None:
             print(f"        pos3d_global: {np.round(self.pos3d_global, 1)}")
+            print(f"        refined: {self.refined}")
 
         if self.sph_coord is not None:
             print(f"        sph_coord [r, alpha, beta]: {np.round(self.sph_coord, 1)}")

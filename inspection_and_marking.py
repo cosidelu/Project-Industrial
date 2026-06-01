@@ -134,7 +134,7 @@ def show_debug_matplotlib(debug_img=None, mask_bgr=None, title="Debug"):
         plt.axis("off")
         plt.show()
 
-def move_to_hub(controller, hub = [0, 0, 90]):
+def move_to_hub(controller, hub = [INSPECTION_RADIUS, 0, 90]):
     print(f"Ritorno alla posizione di hub {hub}.")
 
     if not move_circle_spherical(
@@ -339,6 +339,7 @@ def refine_defect_position(controller,
     mean_refined = np.mean(np.array(refined_positions), axis=0)
 
     defect_obj.pos3d_global = mean_refined
+    defect_obj.refined = True
 
     delta = np.linalg.norm(mean_refined - old_pos)
 
