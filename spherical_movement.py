@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import time
 
+Z_CYLINDER = 150  # Altezza del cilindro in cui switchamo a movimento cilindrico
 
 def angles_unsafe(alpha, beta):
     """
@@ -55,7 +56,7 @@ def is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta, steps=100
             
     return False
 
-def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center=HELMET_CENTER_GLOBAL, speed=300):
+def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center=HELMET_CENTER_GLOBAL, z_cyl=Z_CYLINDER, speed=300):
     """
     Esegue un movimento circolare da una posizione corrente a una posizione finale
     definita da angoli sferici (alpha, beta) attorno al casco.
@@ -63,7 +64,7 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     sono esclusi dalle limitazioni di sicurezza.
     """
 
-    def actually_move(start_a, start_b, end_a, end_b, force_ptp=False):
+    def actually_move(start_a, start_b, end_a, end_b, force_line=False):
         """
         Esegue fisicamente il movimento. Utilizza move_circle calcolando il midpoint,
         oppure ottimizza con PTP per spostamenti molto piccoli o forzati.
@@ -74,12 +75,12 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         p_end, r_end = kin.to_helmet_coordinates([radius, end_a, end_b], helmet_center)
         ee_end = kin.compute_ee_pose_for_tool_target(p_end, r_end, tool_pose_ee=tool_pose_ee)
 
-        if force_ptp or (d_alpha**2 + d_beta**2 < 5**2):
-            if force_ptp:
-                print(f"  [FORCE PTP] Esecuzione forzata verso (alpha={end_a:.1f}°, beta={end_b:.1f}°).")
+        if force_line or (d_alpha**2 + d_beta**2 < 5**2):
+            if force_line:
+                print(f"  [FORCE LINE] Esecuzione forzata verso (alpha={end_a:.1f}°, beta={end_b:.1f}°).")
             else:
                 print(f"  [SHORT PATH] Distanza angolare < 5°. Esecuzione ottimizzata PTP verso (alpha={end_a:.1f}°, beta={end_b:.1f}°).")
-            controller.move_ptp(ee_end, speed=speed)
+            controller.move_line(ee_end, speed=speed)
         else:
             mid_a = np.mean([start_a, end_a])
             mid_b = np.mean([start_b, end_b])
@@ -95,6 +96,20 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     tool_position_ee = tool_pose_ee[:3]
     
     tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
+
+    if tool_position_global[2] < z_cyl:
+        print(f"   [CYL] Partenza da cilidnro, mi sposto pima sulla sfera a z={z_cyl}mm")
+        tool_position_global[2] = z_cyl
+        ee_pose_cyl = kin.compute_ee_pose_for_tool_target(tool_position_global[:3], tool_position_global[3:], tool_pose_ee)
+        controller.move_line(ee_pose_cyl, speed=speed)
+
+        time.sleep(1)  # breve pausa per stabilizzare il movimento
+        # Ricalcolo la posa finale del tool dopo la deviazione cilindrica
+        ee_pose = controller.robot.tcp_coord
+        H_ee_to_glob = kin.create_homogeneous_matrix(ee_pose)
+        tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
+
+    
     start_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
 
     start_radius = start_angles[0]
