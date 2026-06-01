@@ -12,7 +12,7 @@ import time
 Z_CYLINDER = HELMET_CENTER_GLOBAL[2] + 50  
 SPHERE_RADIUS = 300 #DEVE ESSERE UGUALE ALL'INSPECTION RADIUS
 R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_CYLINDER**2)  # Raggio del cilindro alla giunzione con la sfera
-Z_LIMIT = 100  # Limite assoluto di altezza sotto il quale non è sicuro muoversi (es. base del casco o tavolo)
+Z_LIMIT = 150  # Limite assoluto di altezza sotto il quale non è sicuro muoversi (es. base del casco o tavolo)
 
 def angles_unsafe(alpha, beta):
     """
@@ -29,20 +29,13 @@ def angles_unsafe(alpha, beta):
     if not (0.0 <= beta <= 180.0):
         return True
 
-    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 120 gradi
-    if alpha > 105.0 or alpha < -95.0:
-        return True
+    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 120 gradi -> sotituito da z limit
+    #if alpha > 105.0 or alpha < -95.0:
+    #    return True
 
-    # 3. Controllo zona posteriore (retro): più larga che alta
-    # A alpha = 0 la soglia è 20, a alpha = 90 la soglia sale a 30
-    beta_soglia_retro = 15.0 + 26.0 * (alpha / 90.0)**2
-    if beta < beta_soglia_retro:
-        return True
-
-    # 4. Controllo zona anteriore (fronte): più stretta che alta
-    # A alpha = 0 la soglia massima ammessa è 110, a alpha = 90 sale a 140
-    beta_soglia_fronte = 130.0 + 0 * (alpha / 90.0)**2
-    if beta > beta_soglia_fronte:
+    # 3. Controllo per escludere la visiera e la parte davanti
+    beta_soglia_visiera = 45 + (120-45) * (alpha / 180.0)**2
+    if beta < beta_soglia_visiera:
         return True
 
     return False
@@ -61,14 +54,14 @@ def is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta, steps=100
             
     return False
 
-def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center=HELMET_CENTER_GLOBAL, z_cyl=Z_CYLINDER, speed=300):
+def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center=HELMET_CENTER_GLOBAL, speed=300):
     """
     Esegue un movimento circolare da una posizione corrente a una posizione finale
     definita da angoli sferici (alpha, beta) attorno al casco.
     La cinematica è sicura dai gimbal lock poiché i poli (beta=0, beta=180) 
     sono esclusi dalle limitazioni di sicurezza.
 
-    PERCHé FUNZIONI IL MOVIMENTO CILINDRICO è IMPORTANTE CHE LA IL end_sph_coord[0] SIA IL RAGGIO DEL DIFETTO\PUNTO CHE VOGLIO GUARDARE
+    PERCHé FUNZIONI IL MOVIMENTO CILINDRICO è IMPORTANTE CHE LA IL end_sph_coord[0] SIA IL RAGGIO DEL DIFETTO-PUNTO CHE VOGLIO GUARDARE
     """
 
     def actually_move(start_a, start_b, end_a, end_b, force_line=False):
@@ -107,16 +100,16 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
     # --- Verfico se sto partendo dal cilindro e se si mi sposto sulla sfera e aggiorno le coordinate globali del tool ---
 
-    if tool_position_global[2] < z_cyl:
-        print(f"   [CYL] Partenza da cilidnro, mi sposto prima sulla sfera a z={z_cyl}mm")
-        tool_position_global[2] = z_cyl
+    if tool_position_global[2] < Z_CYLINDER:
+        print(f"   [CYL] Partenza da cilindro, mi sposto prima sulla sfera a z={Z_CYLINDER}mm")
+        tool_position_global[2] = Z_CYLINDER
+        cyl_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
 
-        # a questo punto mi sposto sulla posizione aggiornata del tool con le stesse rotazioni iniziali
-        ee_pose_cyl = kin.compute_ee_pose_for_tool_target(tool_position_global[:3], ee_pose[:3], tool_pose_ee)
-        controller.move_line(ee_pose_cyl, speed=speed)
+        # a questo punto mi sposto sull'intersezione tra cilindro e sfera
+        actually_move(0,0, cyl_angles[1], cyl_angles[2], force_line=True)
 
         time.sleep(1)  # breve pausa per stabilizzare il movimento
-        # Ricalcolo la posa finale del tool dopo la deviazione cilindrica
+        # Ricalcolo la posa finale del tool dopo la deviazione cilindrica ne dubbio
         ee_pose = controller.robot.tcp_coord
         H_ee_to_glob = kin.create_homogeneous_matrix(ee_pose)
         tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
@@ -142,22 +135,36 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     
     # --- Controllo se la fine è nel ciilindro
     ends_on_cylinder = False
-    # calcolo la z finale del punto target
+    # calcolo la z finale del punto target SUL CASCO
     p_end, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
-    if p_end[2] < z_cyl:
-        if p_end[2] < Z_LIMIT:
-            print(f"  [ERROR] Destinazione finale a z={p_end[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
-            return False
-        
-        print(f"  [CYL] Destinazione finale prevista a z={p_end[2]:.1f} mm, che è sotto la soglia cilindrica di {z_cyl} mm.")
+
+    if p_end[2] < Z_LIMIT:
+        print(f"  [ERROR] Destinazione finale a z={p_end[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
+        return False
+    
+    if p_end[2] < Z_CYLINDER:
+        print(f"  [CYL] Destinazione finale prevista a z={p_end[2]:.1f} mm, che è sotto la soglia cilindrica di {Z_CYLINDER} mm.")
         ends_on_cylinder = True
+        p_end_cyl = np.zeros(3)
         
-
         #calcolo il punto finale di ispezione sul cilindro alla stessa altezza del difetto
+        gamma = np.arctan2(p_end[0] - helmet_center[0], p_end[1] - helmet_center[1])  # angolo polare del punto di destinazione
 
+        p_end_cyl[0] = helmet_center[0] + R_CYLINDER * np.sin(gamma)  # x del punto dove posizionerò il tool sul cilindro
+        p_end_cyl[1] = helmet_center[1] + R_CYLINDER * np.cos(gamma)  # y del punto dove posizionerò il tool sul cilindro
+        p_end_cyl[2] = p_end[2]  # z del punto dove posizionerò il tool sul cilindro, uguale alla z del difetto
+
+        #trovo anche le rotazioni desiderate dell'ee -> z verso il centro parallela a terra e x verso il basso (CREDO DA VERIFICARE)
+        x_axis = np.array(0, 0, -1)  # x verso il basso
+        z_axis = np.array(-np.sin(gamma), -np.cos(gamma), 0) # z verso il centro del casco, parallelo a terra
+        y_axis = np.cross(z_axis, x_axis)  # y per completare la base ortonormale
+
+        cyl_R_mat = np.column_stack((x_axis, y_axis, z_axis))  # matrice di rotazione per l'orientamento cilindrico
+        r_end_cyl = kin.rot_matrix_to_angles_zyx(cyl_R_mat)
 
         #sovrascrivo end_alpha e end_beta con quelli del punto di intersezione tra cilindro e sfera
-        p_intersection = np.array([p_end[0], p_end[1], z_cyl])
+        p_intersection = np.array([p_end[0], p_end[1], Z_CYLINDER])
+        end_alpha, end_beta = kin.to_helmet_angles(p_intersection, helmet_center)[1:]
     
     # --- 3. Controllo Sicurezza Traiettoria ---
     # Se il segmento taglia una zona pericolosa, deviamo passano per l'apice (0, 90) che è sempre sicuro.
@@ -195,58 +202,91 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    import Variables as vb
+    import kinematics_v2 as kin
 
-    print("Generazione della mappa di sicurezza (Alpha vs Beta)...")
+    print("Generazione della MESH 3D dello spazio di lavoro...")
 
-    # 1. Creazione della griglia di punti (Discretizzazione)
-    # Generiamo 500 punti per asse per avere una risoluzione molto definita della mappa
-    alpha_range = np.linspace(-120, 120, 500)
-    beta_range = np.linspace(-15, 200, 500)
+    # 1. Definizione della griglia angolare (100x100 basta per una mesh fluida)
+    n_points = 50
+    alpha_range = np.linspace(-180, 180, n_points)
+    beta_range = np.linspace(0, 180, n_points)
     
+    # Creiamo le matrici 2D per Alpha e Beta necessari a plot_surface
     Alpha, Beta = np.meshgrid(alpha_range, beta_range)
     
-    # 2. Vettorizzazione della tua funzione angles_unsafe
-    # Questo permette di applicare la funzione su tutta la matrice NumPy in un colpo solo
-    vec_angles_unsafe = np.vectorize(angles_unsafe)
-    unsafe_mask = vec_angles_unsafe(Alpha, Beta)
-
-    # 3. Configurazione del Plot con Matplotlib
-    plt.figure(figsize=(10, 8))
+    # Matrici per contenere i punti cartesiani finali della mesh
+    X = np.zeros_like(Alpha)
+    Y = np.zeros_like(Alpha)
+    Z = np.zeros_like(Alpha)
     
-    # Creiamo una colormap personalizzata: Rosso per True (Unsafe), Blu per False (Safe)
-    # Usiamo 'ListedColormap' per avere una distinzione netta senza sfumature
-    from matplotlib.colors import ListedColormap
-    custom_cmap = ListedColormap(['#1f77b4', '#d62728']) # Blu classico e Rosso acceso
+    # Matrice RGB per i colori di ogni singolo punto (R, G, B)
+    # Inizializziamo tutto a zero
+    colors = np.zeros((n_points, n_points, 3))
 
-    # Disegnamo la mappa bidimensionale
-    mesh = plt.pcolormesh(
-        Alpha, Beta, unsafe_mask, 
-        cmap=custom_cmap, 
-        shading='auto',
-        alpha=0.85
+    # 2. Calcolo dei punti 3D e assegnazione dei colori della mesh
+    radius = SPHERE_RADIUS - 100
+    
+    for i in range(n_points):
+        for j in range(n_points):
+            a = Alpha[i, j]
+            b = Beta[i, j]
+            
+            # Trasformazione cinematica cartesiana
+            sph_coord = [radius, a, b]
+            p_global, _ = kin.to_helmet_coordinates(sph_coord, HELMET_CENTER_GLOBAL)
+            
+            X[i, j] = p_global[0]
+            Y[i, j] = p_global[1]
+            Z[i, j] = p_global[2]
+            
+            # Assegnazione colore in base alla sicurezza
+            if angles_unsafe(a, b) or p_global[2] < Z_LIMIT:
+                colors[i, j] = [0.85, 0.15, 0.15]  # Rosso opaco (Unsafe)
+            else:
+                colors[i, j] = [0.12, 0.47, 0.71]  # Blu classico (Safe)
+
+    # 3. Configurazione del Plot 3D della Superficie
+    fig = plt.figure(figsize=(12, 9))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plottiamo la superficie solida (Mesh)
+    # facecolors accetta la nostra matrice RGB customizer per colorare le zone
+    mesh = ax.plot_surface(
+        X, Y, Z, 
+        facecolors=colors, 
+        linewidth=0, 
+        antialiased=True, 
+        shade=True,      # Attiva le ombre per dare profondità 3D tridimensionale
+        alpha=0.8        # Leggera trasparenza globale
     )
 
-    # 4. Estetica del grafico, griglia e limiti
-    plt.title("Mappa di Sicurezza Angolare del Casco\n[ Blu = SAFE  |  Rosso = UNSAFE ]", fontsize=14, pad=15, weight='bold')
-    plt.xlabel("Angolo Alpha (Sinistra [-] / Destra [+]) [Gradi]", fontsize=11)
-    plt.ylabel("Angolo Beta (Retro [0] / Apice [90] / Fronte [180]) [Gradi]", fontsize=11)
-    
-    # Disegnamo delle linee di riferimento per i limiti principali impostati nel codice
-    plt.axvline(x=105, color='black', linestyle='--', alpha=0.7, label='Limiti Alpha (+105° / -95°)')
-    plt.axvline(x=-95, color='black', linestyle='--', alpha=0.7)
-    
-    # Mostriamo dove sono l'apice e i limiti teorici di beta
-    plt.axhline(y=90, color='white', linestyle=':', alpha=0.6, label='Apice (Beta = 90°)')
-    plt.axhline(y=0, color='black', linestyle='-', alpha=0.5)
-    plt.axhline(y=180, color='black', linestyle='-', alpha=0.5)
+    # 4. Disegnamo il centro del casco (Stella nera)
+    ax.scatter(
+        HELMET_CENTER_GLOBAL[0], HELMET_CENTER_GLOBAL[1], HELMET_CENTER_GLOBAL[2], 
+        color='black', marker='*', s=200, zorder=10, label='Centro Casco'
+    )
 
-    # Legenda per le linee di riferimento
-    plt.legend(loc='upper left', framealpha=0.9)
-    
-    # Configurazione griglia e limiti degli assi del grafico
-    plt.grid(True, linestyle=':', color='black', alpha=0.3)
-    plt.xlim(-120, 120)
-    plt.ylim(-15, 195)
-    
-    # Mostra il grafico a schermo
+    # 5. Estetica, proporzioni e scritte
+    ax.set_title("Superficie Mesh 3D dello Spazio di Lavoro\n[ Blu = SAFE  |  Rosso = UNSAFE ]", fontsize=14, weight='bold')
+    ax.set_xlabel("Asse X Globale [mm]", fontsize=10)
+    ax.set_ylabel("Asse Y Globale [mm]", fontsize=10)
+    ax.set_zlabel("Asse Z Globale [mm]", fontsize=10)
+
+    # Forziamo le proporzioni isometriche (fondamentale per non vedere la sfera deformata in un uovo)
+    try:
+        ax.set_box_aspect([1,1,1])
+    except NotImplementedError:
+        pass
+
+    # Creiamo una legenda manuale pulita visto che plot_surface non supporta direttamente i label
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#1f77b4', edgecolor='none', alpha=0.8, label='Superficie SAFE'),
+        Patch(facecolor='#d62728', edgecolor='none', alpha=0.8, label='Superficie UNSAFE (Limiti)')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right')
+
+    print("Mesh generata con successo! Muovi il grafico per osservare la calotta.")
     plt.show()
