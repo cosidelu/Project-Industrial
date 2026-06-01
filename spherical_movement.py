@@ -7,7 +7,12 @@ import cv2
 import numpy as np
 import time
 
-Z_CYLINDER = 150  # Altezza del cilindro in cui switchamo a movimento cilindrico
+# Altezza del cilindro in cui switchamo a movimento cilindrico DA REGOLARE
+# DEVE ESSERE MAGGIORE DELLA Z DI HELMET CENTER PER EVITARE IL LOCK
+Z_CYLINDER = HELMET_CENTER_GLOBAL[2] + 50  
+SPHERE_RADIUS = 300 #DEVE ESSERE UGUALE ALL'INSPECTION RADIUS
+R_CYLINDER = np.sqrt(SPHERE_RADIUS**2 - Z_CYLINDER**2)  # Raggio del cilindro alla giunzione con la sfera
+Z_LIMIT = 100  # Limite assoluto di altezza sotto il quale non è sicuro muoversi (es. base del casco o tavolo)
 
 def angles_unsafe(alpha, beta):
     """
@@ -15,8 +20,8 @@ def angles_unsafe(alpha, beta):
     di sicurezza o all'interno di zone di collisione (dietro, davanti, o laterale eccessivo).
     
     Convenzione corrente:
-    - alpha: intervallo [-90, 90] gradi.
-    - beta: intervallo [0, 180] gradi (0 = retro, 90 = sommità, 180 = fronte).
+    - alpha: intervallo [-90, 90] gradi -> 0 = centro, +90 = lato destro, -90 = lato sinistro.
+    - beta: intervallo [0, 180] gradi -> (0 = retro, 90 = sommità, 180 = fronte).
     
     :return: True se la configurazione è pericolosa/non ammessa, False altrimenti.
     """
@@ -62,6 +67,8 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     definita da angoli sferici (alpha, beta) attorno al casco.
     La cinematica è sicura dai gimbal lock poiché i poli (beta=0, beta=180) 
     sono esclusi dalle limitazioni di sicurezza.
+
+    PERCHé FUNZIONI IL MOVIMENTO CILINDRICO è IMPORTANTE CHE LA IL end_sph_coord[0] SIA IL RAGGIO DEL DIFETTO\PUNTO CHE VOGLIO GUARDARE
     """
 
     def actually_move(start_a, start_b, end_a, end_b, force_line=False):
@@ -97,10 +104,15 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     
     tool_position_global = kin.homogeneous_trasform(H_ee_to_glob, tool_position_ee)
 
+
+    # --- Verfico se sto partendo dal cilindro e se si mi sposto sulla sfera e aggiorno le coordinate globali del tool ---
+
     if tool_position_global[2] < z_cyl:
-        print(f"   [CYL] Partenza da cilidnro, mi sposto pima sulla sfera a z={z_cyl}mm")
+        print(f"   [CYL] Partenza da cilidnro, mi sposto prima sulla sfera a z={z_cyl}mm")
         tool_position_global[2] = z_cyl
-        ee_pose_cyl = kin.compute_ee_pose_for_tool_target(tool_position_global[:3], tool_position_global[3:], tool_pose_ee)
+
+        # a questo punto mi sposto sulla posizione aggiornata del tool con le stesse rotazioni iniziali
+        ee_pose_cyl = kin.compute_ee_pose_for_tool_target(tool_position_global[:3], ee_pose[:3], tool_pose_ee)
         controller.move_line(ee_pose_cyl, speed=speed)
 
         time.sleep(1)  # breve pausa per stabilizzare il movimento
@@ -111,7 +123,6 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
     
     start_angles = kin.to_helmet_angles(tool_position_global, helmet_center)
-
     start_radius = start_angles[0]
 
     if abs(start_radius - radius) > 20:
@@ -124,19 +135,38 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     start_alpha, start_beta = start_angles[1], start_angles[2]
     end_alpha, end_beta = end_sph_coord[1], end_sph_coord[2]
 
-    # --- 2. Controllo Sicurezza Destinazione ---
+    # --- 2. Controllo Sicurezza Destinazione --- TENIAMO GLI ANGOLI PER LE ZONE DI SICUREZZA MA VANNO AGGIORNATI
     if angles_unsafe(end_alpha, end_beta):
         print(f"  [SKIP] Destinazione (alpha={end_alpha:.1f}°, beta={end_beta:.1f}°) fuori limiti sicurezza.")
         return False
+    
+    # --- Controllo se la fine è nel ciilindro
+    ends_on_cylinder = False
+    # calcolo la z finale del punto target
+    p_end, _ = kin.to_helmet_coordinates(end_sph_coord, helmet_center)
+    if p_end[2] < z_cyl:
+        if p_end[2] < Z_LIMIT:
+            print(f"  [ERROR] Destinazione finale a z={p_end[2]:.1f} mm, che è sotto il limite assoluto di {Z_LIMIT} mm. Movimento rifiutato.")
+            return False
+        
+        print(f"  [CYL] Destinazione finale prevista a z={p_end[2]:.1f} mm, che è sotto la soglia cilindrica di {z_cyl} mm.")
+        ends_on_cylinder = True
+        
 
+        #calcolo il punto finale di ispezione sul cilindro alla stessa altezza del difetto
+
+
+        #sovrascrivo end_alpha e end_beta con quelli del punto di intersezione tra cilindro e sfera
+        p_intersection = np.array([p_end[0], p_end[1], z_cyl])
+    
     # --- 3. Controllo Sicurezza Traiettoria ---
     # Se il segmento taglia una zona pericolosa, deviamo passano per l'apice (0, 90) che è sempre sicuro.
     if is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta):
         print(f"  [SAFETY] Traiettoria non sicura. Deviazione tramite l'apice del casco.")
         apex_alpha, apex_beta = 0.0, 90.0
         actually_move(start_alpha, start_beta, apex_alpha, apex_beta)
-        actually_move(apex_alpha, apex_beta, end_alpha, end_beta)
-        return True
+
+        start_alpha, start_beta = apex_alpha, apex_beta  # Aggiorno il punto di partenza dopo la deviazione
 
     # --- 4. Suddivisione Archi Ampi (Prevenzione Errori Controller) ---
     # Dato che alpha è limitato a +/- 90, l'arco massimo teorico è 180°.
@@ -151,97 +181,72 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
     # --- 5. Esecuzione Traiettoria Diretta ---
     actually_move(start_alpha, start_beta, end_alpha, end_beta)
+
+    # se il punto finale era sul cilindro end alpha ed end beta sono il punto nella giunzione tra cilindro e sfera,
+    # quindi ho bisogno di un ultimo movimento lineare per scendere sul cilindro
+
+    if ends_on_cylinder:
+        print("hi")
+        
+
     return True
 
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
 
-    import kinematics_v2 as kin
-    from robot_control import RobotController
-    import Variables as vb
+    print("Generazione della mappa di sicurezza (Alpha vs Beta)...")
 
-    IP_LAB = "192.168.19.22"
-    IP_SIM = "127.0.0.1"
-    controller = RobotController(ip_address=IP_SIM , default_position_j=vb.LOOK_DOWN_POSITION_J_INIZIO)
-    controller.disconnect()
-    controller.connect()
+    # 1. Creazione della griglia di punti (Discretizzazione)
+    # Generiamo 500 punti per asse per avere una risoluzione molto definita della mappa
+    alpha_range = np.linspace(-120, 120, 500)
+    beta_range = np.linspace(-15, 200, 500)
+    
+    Alpha, Beta = np.meshgrid(alpha_range, beta_range)
+    
+    # 2. Vettorizzazione della tua funzione angles_unsafe
+    # Questo permette di applicare la funzione su tutta la matrice NumPy in un colpo solo
+    vec_angles_unsafe = np.vectorize(angles_unsafe)
+    unsafe_mask = vec_angles_unsafe(Alpha, Beta)
 
-    controller.default_positioning()
+    # 3. Configurazione del Plot con Matplotlib
+    plt.figure(figsize=(10, 8))
+    
+    # Creiamo una colormap personalizzata: Rosso per True (Unsafe), Blu per False (Safe)
+    # Usiamo 'ListedColormap' per avere una distinzione netta senza sfumature
+    from matplotlib.colors import ListedColormap
+    custom_cmap = ListedColormap(['#1f77b4', '#d62728']) # Blu classico e Rosso acceso
 
-    # Definizione della posizione di partenza nominale (Apice del casco)
-    START_SPH = [300, 0, 90]
+    # Disegnamo la mappa bidimensionale
+    mesh = plt.pcolormesh(
+        Alpha, Beta, unsafe_mask, 
+        cmap=custom_cmap, 
+        shading='auto',
+        alpha=0.85
+    )
 
-    # Generazione della lista dei casi critici (Stress Test) per la nuova convenzione
-    esph_test = [
-        {
-            "coord": [300, 0, 120], 
-            "desc": "Violazione frontale centrale: beta=120 supera la soglia limite di 110 ad alpha=0."
-        },
-        {
-            "coord": [300, 90, 145], 
-            "desc": "Violazione frontale laterale: beta=145 supera la tolleranza allargata di 140 ad alpha=90."
-        },
-        {
-            "coord": [300, 0, 15], 
-            "desc": "Violazione posteriore centrale: beta=15 interseca l'ingombro della base (limite 20 ad alpha=0)."
-        },
-        {
-            "coord": [300, 100, 90], 
-            "desc": "Violazione del limite laterale assoluto: alpha=100 eccede il dominio operativo di +/- 90 gradi."
-        },
-        {
-            "coord": [300, 0, -5], 
-            "desc": "Violazione geometrica assoluta: l'angolo di elevazione beta è inferiore a 0."
-        },
-        {
-            "coord": [300, 90, 90], 
-            "desc": "Posizionamento laterale destro (alpha=90, beta=90) preparatorio per i test di spostamento."
-        },
-        {
-            "coord": [300, -90, 90], 
-            "desc": "Ampio spostamento angolare (180 gradi su alpha): attivazione della suddivisione in due sottomovimenti sferici."
-        },
-        {
-            "coord": [300, -90, 130], 
-            "desc": "Posizionamento frontale-laterale sinistro (beta=130): zona sicura preparatoria per il test di deviazione."
-        },
-        {
-            "coord": [300, 90, 130], 
-            "desc": "Test traiettoria insicura: il movimento diretto verso il lato opposto attraversa il viso al centro (midpoint alpha=0, beta=130 non ammesso). Attesa deviazione via apice."
-        },
-        {
-            "coord": [300, 0, 90], 
-            "desc": "Ritorno all'apice: destinazione sicura e azzeramento posizionale."
-        }
-    ]
+    # 4. Estetica del grafico, griglia e limiti
+    plt.title("Mappa di Sicurezza Angolare del Casco\n[ Blu = SAFE  |  Rosso = UNSAFE ]", fontsize=14, pad=15, weight='bold')
+    plt.xlabel("Angolo Alpha (Sinistra [-] / Destra [+]) [Gradi]", fontsize=11)
+    plt.ylabel("Angolo Beta (Retro [0] / Apice [90] / Fronte [180]) [Gradi]", fontsize=11)
+    
+    # Disegnamo delle linee di riferimento per i limiti principali impostati nel codice
+    plt.axvline(x=105, color='black', linestyle='--', alpha=0.7, label='Limiti Alpha (+105° / -95°)')
+    plt.axvline(x=-95, color='black', linestyle='--', alpha=0.7)
+    
+    # Mostriamo dove sono l'apice e i limiti teorici di beta
+    plt.axhline(y=90, color='white', linestyle=':', alpha=0.6, label='Apice (Beta = 90°)')
+    plt.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+    plt.axhline(y=180, color='black', linestyle='-', alpha=0.5)
 
-    # Inizializzazione del robot all'apice prima di iniziare i test
-    p_obj, r_obj = kin.to_helmet_coordinates(START_SPH, vb.HELMET_CENTER_GLOBAL)
-    ee_pose = kin.compute_ee_pose_for_tool_target(p_obj, r_obj, vb.CAMERA_POSE_EE)
-    controller.move_ptp(ee_pose)
-    print("Robot posizionato all'apice (alpha=0, beta=90). Inizio sequenza di test.\n")
-    print("-" * 60)
-
-    # Esecuzione iterativa dello stress test
-    for case in esph_test:
-        esph = case["coord"]
-        desc = case["desc"]
-        
-        print(f"Test in esecuzione: {desc}")
-        print(f"Target: alpha={esph[1]}°, beta={esph[2]}°")
-        
-        success = move_circle_spherical(
-            controller=controller,
-            radius=esph[0],
-            end_sph_coord=esph,
-            tool_pose_ee=vb.CAMERA_POSE_EE,
-            helmet_center=vb.HELMET_CENTER_GLOBAL
-        )
-        
-        if not success:
-            print("Esito: RIFIUTATO (Comportamento atteso per coordinate non sicure).")
-        else:
-            print("Esito: COMPLETATO.")
-            
-        print("-" * 60)
+    # Legenda per le linee di riferimento
+    plt.legend(loc='upper left', framealpha=0.9)
+    
+    # Configurazione griglia e limiti degli assi del grafico
+    plt.grid(True, linestyle=':', color='black', alpha=0.3)
+    plt.xlim(-120, 120)
+    plt.ylim(-15, 195)
+    
+    # Mostra il grafico a schermo
+    plt.show()
