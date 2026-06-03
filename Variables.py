@@ -1,4 +1,6 @@
 import numpy as np
+import Variables_global as vbg
+import kinematics_v2 as kin
 
 # ============================================================
 # VARIABILI CINEMATICHE E DI POSIZIONAMENTO
@@ -14,15 +16,37 @@ anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in grad
 
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
 MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
-HELMET_CENTER_GLOBAL = [-1.1404489900286907, 661.6529292463887, 191.09565317703016 + 50] #trovato scendendo di 20cm dall'apice del casco
 
+BASE_MARKER_POSE = [65.24002106997133, 355.93282222165686, 182.099561913089, 0,0,0] #già con l'Y_OFFSET, visiera verso il robot
+
+NEW_MARKER_POSE = [0, 0, 0, 0, 0, 0]
+
+H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
+H_marker_inv = kin.create_homogeneous_matrix(BASE_MARKER_POSE, Inverse=True)
+
+rot_z = 180
+
+H_marker_new = kin.create_homogeneous_matrix(NEW_MARKER_POSE)
+
+def local_start_marker(global_pose):
+    p_local = kin.homogeneous_trasform(H_marker_inv, global_pose[:3]) #transform delle x,y,z
+    return p_local.tolist() + global_pose[3:] #return con le 3 posizioni sovrascritte convertite in lista + le rotaz originali del p.to
+
+def global_final_marker(local_pose):
+    p_global = kin.homogeneous_trasform(H_marker_new, local_pose[:3])
+    local_pose[-1] += rot_z
+    return p_global.tolist() + local_pose[3:]
+
+
+# ============================================================
+# POSIZIONI DI DEFAULT E JOINT
+# ============================================================
 
 # legacy defaults
 #DEFAULT_POSITIONING_JOINTS = [-132 , 0, -133, -48 , -42, 180]
 #DEFAULT_POSITIONING_POSE = [34, 400, 320, 90, 0, -90]
 
 #LOOK_DOWN_POSITION = [34,440,700,180,0,-90] -> usa il corrispondente j per univocità
-# DEFAULT POSITION FOR START AND END
 LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
  22.920495986938477,
  -106.5320816040039,
@@ -31,154 +55,61 @@ LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
  244.83934020996094 - 360]
 
 
-# Da ora in poi ci sono i punti nel sdr globale dei punti per i vari movimenti
-# apertura visiera
-Y_OFFSET = 90
+# ============================================================
+# CENTRO DEL CASCO
+# ============================================================
 
-VISIERA_0 = [50.00060272216797,
- 390.0002746582031 - Y_OFFSET,
- 350.0002136230469,
- 90.00011444091797,
- -5.87225440540351e-05,
- -90.00028228759766]
+HELMET_CENTER_GLOBAL = global_final_marker(local_start_marker(vbg.HELMET_CENTER_GLOBAL))
 
-VISIERA_1 = [34, 400 - Y_OFFSET, 270, 90, 0, -90]
-VISIERA_2 = [33.99250793457031,
- 463.2510681152344 - Y_OFFSET,
- 321.2673645019531,
- 90.00011444091797,
- -20.861278533935547,
- -90.0005874633789]
-VISIERA_3 = [33.994651794433594,
- 509.1741638183594 - Y_OFFSET,
- 397.94671630859375,
- 90.00074768066406,
- -28.125022888183594,
- -90.00105285644531]
-VISIERA_4 = [33.99457550048828,
- 585.3206176757812 - Y_OFFSET,
- 451.2611083984375,
- 89.99974060058594,
- -35.951942443847656,
- -89.99921417236328]
 
-VISIERA_5 = [33.993629455566406,
- 530.0021362304688 - Y_OFFSET,
- 451.263671875,
- 90.00007629394531,
- -35.95146179199219,
- -89.99943542480469]
+# ============================================================
+# SEQUENZA APERTURA VISIERA
+# ============================================================
 
-ALLONTANAMENTO = [400,
- 400.0021362304688 - Y_OFFSET,
- 451.263671875,
- 90.00007629394531,
- -35.95146179199219,
- -89.99943542480469]
+VISIERA_0 = global_final_marker(local_start_marker(vbg.VISIERA_0))
+VISIERA_1 = global_final_marker(local_start_marker(vbg.VISIERA_1))
+VISIERA_2 = global_final_marker(local_start_marker(vbg.VISIERA_2))
+VISIERA_3 = global_final_marker(local_start_marker(vbg.VISIERA_3))
+VISIERA_4 = global_final_marker(local_start_marker(vbg.VISIERA_4))
+VISIERA_5 = global_final_marker(local_start_marker(vbg.VISIERA_5))
 
-ALLONTANAMENTO_JOINT = [-146.18263244628906,
- -12.951272964477539,
- -132.1487579345703,
- -34.90068435668945,
- 33.81787109375,
- 0.0001500248908996582] #joint del punto lontano
 
-SOLE_1 = [283.070129394531,
- 689.125 - Y_OFFSET,
- 145.3538818359375,
- -100.78451538085938,
- 3.1395444869995117,
- 0.00046600602217949927] #non in contatto
+# ============================================================
+# ALLONTANAMENTO
+# ============================================================
 
-SOLE_2 = [220.6041717529297,
- 689.1180419921875 - Y_OFFSET,
- 145.34640502929688,
- -100.78553771972656,
- 3.140183210372925,
- 0.0004269408527761698] #contatto con cosetto
+ALLONTANAMENTO       = global_final_marker(local_start_marker(vbg.ALLONTANAMENTO))
+ALLONTANAMENTO_JOINT = vbg.ALLONTANAMENTO_JOINT  # joint — non trasformato
 
-SOLE_3 =  [218.779052734375,
- 661.0 - Y_OFFSET,
- 149.00521850585938,
- -111.86102294921875,
- 8.024826049804688,
- -0.8524099588394165] #chiuso
 
-SOLE_4 = [251.88111877441406,
- 661.0087280273438 - Y_OFFSET,
- 149.00547790527344,
- -111.8600845336914,
- 8.024142265319824,
- -0.8525157570838928] #mi allontano un pochino
+# ============================================================
+# SOLE (chiusura visiera da sole)
+# ============================================================
 
-LUNA_1 = [230.24288940429688,
- 636.6008911132812 - Y_OFFSET,
- 150.96363830566406,
- -125.37001037597656,
- 7.215330123901367,
- -3.4650392532348633]
+SOLE_1 = global_final_marker(local_start_marker(vbg.SOLE_1))
+SOLE_2 = global_final_marker(local_start_marker(vbg.SOLE_2))
+SOLE_3 = global_final_marker(local_start_marker(vbg.SOLE_3))
+SOLE_4 = global_final_marker(local_start_marker(vbg.SOLE_4))
 
-LUNA_2 = [224.85784912109375,
- 636.61279296875 - Y_OFFSET,
- 150.96994018554688,
- -125.36876678466797,
- 7.214663028717041,
- -3.4636900424957275] #non contatto
 
-LUNA_3 = [224.86691284179688,
- 636.62451171875 - Y_OFFSET,
- 150.97393798828125,
- -125.96205139160156,
- 16.65925407409668,
- -3.5868611335754395] #chiuso
+# ============================================================
+# LUNA (pressione pulsante)
+# ============================================================
 
-LUNA_4 = LUNA_2
+LUNA_1 = global_final_marker(local_start_marker(vbg.LUNA_1))
+LUNA_2 = global_final_marker(local_start_marker(vbg.LUNA_2))
+LUNA_3 = global_final_marker(local_start_marker(vbg.LUNA_3))
+LUNA_4 = LUNA_2  
+LUNA_5 = global_final_marker(local_start_marker(vbg.LUNA_5))
+LUNA_6 = global_final_marker(local_start_marker(vbg.LUNA_6))
 
-LUNA_5 = [301.23834228515625,
- 636.6192016601562 - Y_OFFSET,
- 127.37820434570312,
- -125.96270751953125,
- 16.65972328186035,
- -3.586009979248047] #lontano
 
-LUNA_6 = [301.2345275878906,
- 636.6098022460938 - Y_OFFSET,
- 478.62139892578125,
- -125.96233367919922,
- 16.659420013427734,
- -3.5862340927124023] #andiamo su
+# ============================================================
+# SEQUENZA CHIUSURA VISIERA
+# ============================================================
 
-VISIERA_10_J = [-115.96940612792969,
- -9.36942195892334,
- -89.5824966430664,
- -81.04840850830078,
- -25.969308853149414,
- -100.0000991821289] #lontano
-
-VISIERA_11 = [33.986656188964844,
- 657.1017456054688 - Y_OFFSET,
- 517.5099487304688,
- 90.00114440917969,
- -80.32698822021484,
- -90.00045776367188] #inizio
-
-VISIERA_12 = [33.990013122558594,
- 547.646728515625 - Y_OFFSET,
- 450.2798767089844,
- 90.0010986328125,
- -59.731624603271484,
- -90.00019073486328] #mid
-
-VISIERA_13 = [33.98914337158203,
- 490.85382080078125 - Y_OFFSET,
- 376.34722900390625,
- 90.0005874633789,
- -47.075801849365234,
- -90.00011444091797] #fine
-
-VISIERA_14 = [33.98914337158203,
- 490.85382080078125 - Y_OFFSET,
- 400.0,
- 90.0005874633789,
- -47.075801849365234,
- -90.00011444091797]#lontano
+VISIERA_10_J = vbg.VISIERA_10_J  
+VISIERA_11   = global_final_marker(local_start_marker(vbg.VISIERA_11))
+VISIERA_12   = global_final_marker(local_start_marker(vbg.VISIERA_12))
+VISIERA_13   = global_final_marker(local_start_marker(vbg.VISIERA_13))
+VISIERA_14   = global_final_marker(local_start_marker(vbg.VISIERA_14))
