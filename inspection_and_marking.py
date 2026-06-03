@@ -88,7 +88,7 @@ GLOBAL_CYLINDER_RADIUS = 150.0
 
 # Range di profondità lungo Z camera [mm].
 # Tiene solo punti non troppo vicini e non troppo lontani.
-GLOBAL_HEIGHT_RANGE = (100, 300)
+GLOBAL_HEIGHT_RANGE = (50, 200)
 
 
 # -------------------------------
@@ -100,10 +100,10 @@ GLOBAL_HEIGHT_RANGE = (100, 300)
 REFINE_ATTENTION_RADIUS = CLOSE_INSPECTION_RADIUS
 
 # Cilindro più stretto per il raffinamento [mm].
-REFINE_CYLINDER_RADIUS = 50.0
+REFINE_CYLINDER_RADIUS = 25.0
 
 # Range di profondità più stretto per il raffinamento [mm].
-REFINE_HEIGHT_RANGE = (50, 300)
+REFINE_HEIGHT_RANGE = (50, 200)
 
 
 # -------------------------------
@@ -303,9 +303,14 @@ def refine_defect_position(controller,
         )
 
         n_def_shot = len(defect_list_shot)
+        if n_def_shot == 0:
+            print(f"    Scatto {shot_idx + 1}/{n_shots}: nessun difetto, passo al prossimo scatto.")
+            continue
+
         print(f"    Scatto {shot_idx + 1}/{n_shots}: rilevati {n_def_shot} difetti.")
         best_match = None
         best_dist = float("inf")
+
 
         # Cerco il difetto rilevato più vicino alla posizione stimata.
         for d in defect_list_shot:
@@ -326,13 +331,9 @@ def refine_defect_position(controller,
             found_str = "non trovato"
 
         print(f"    Scatto {shot_idx + 1}/{n_shots}: {found_str}")
-
-        # Stampa valori del best match
-        if best_match is not None:
-            best_match.say_hi(Name=f"Best Match #{shot_idx + 1}")
         
-    if len(refined_positions) == 0:
-        print("  [ATTENZIONE] Nessuno scatto valido durante il raffinamento.")
+    if len(refined_positions) <=8:
+        print(f"  [ATTENZIONE] Sicurezza difetto {len(refined_positions)}/{n_shots} sotto la soglia, difetto scartato.")
         return False
 
     old_pos = defect_obj.pos3d_global.copy()
