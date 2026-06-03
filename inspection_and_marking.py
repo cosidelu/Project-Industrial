@@ -342,7 +342,7 @@ def refine_defect_position(controller,
 
     delta = np.linalg.norm(mean_refined - old_pos)
 
-    new_spherical_coord = to_helmet_angles(mean_refined, helmet_center)
+    new_spherical_coord = kin.to_helmet_angles(mean_refined, helmet_center)
     new_r, new_alpha, new_beta = new_spherical_coord
 
     print("  Raffinamento completato.")
