@@ -30,6 +30,8 @@ LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
  -90.00030517578125,
  244.83934020996094 - 360]
 
+LOOK_DOWN_POSITION = [34,440,700,180,0,-90]
+
 
 # Da ora in poi ci sono i punti nel sdr globale dei punti per i vari movimenti
 # apertura visiera

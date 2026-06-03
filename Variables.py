@@ -19,12 +19,13 @@ MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore ri
 
 BASE_MARKER_POSE = [65.24002106997133, 355.93282222165686, 182.099561913089, 0,0,0] #già con l'Y_OFFSET, visiera verso il robot
 
-NEW_MARKER_POSE = [0, 0, 0, 0, 0, 0]
+rot_z = -90
+NEW_MARKER_POSE = [453.40585778908485, 91.35804690878147, 167.3797391351403, 0, 0, rot_z]
 
 H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
 H_marker_inv = kin.create_homogeneous_matrix(BASE_MARKER_POSE, Inverse=True)
 
-rot_z = 180
+
 
 H_marker_new = kin.create_homogeneous_matrix(NEW_MARKER_POSE)
 
@@ -34,7 +35,7 @@ def local_start_marker(global_pose):
 
 def global_final_marker(local_pose):
     p_global = kin.homogeneous_trasform(H_marker_new, local_pose[:3])
-    local_pose[-1] += rot_z
+    local_pose[-1] =  local_pose[-1] + rot_z
     return p_global.tolist() + local_pose[3:]
 
 
@@ -54,6 +55,7 @@ LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
  -90.00030517578125,
  244.83934020996094 - 360]
 
+LOOK_DOWN_POSITION = global_final_marker(local_start_marker(vbg.LOOK_DOWN_POSITION))
 
 # ============================================================
 # CENTRO DEL CASCO
