@@ -337,12 +337,17 @@ def refine_defect_position(controller,
 
     old_pos = defect_obj.pos3d_global.copy()
     mean_refined = np.mean(np.array(refined_positions), axis=0)
-
+    
     defect_obj.pos3d_global = mean_refined
 
     delta = np.linalg.norm(mean_refined - old_pos)
 
+    new_spherical_coord = to_helmet_angles(mean_refined, helmet_center)
+    new_r, new_alpha, new_beta = new_spherical_coord
+
     print("  Raffinamento completato.")
+    print(f"  Nuove coordinate sferiche:")
+    print(f"    r={new_r:.1f} mm, alpha={new_alpha:.1f}°, beta={new_beta:.1f}°")
     print(f"  Posizione vecchia: {np.round(old_pos, 1)} mm")
     print(f"  Posizione nuova:   {np.round(mean_refined, 1)} mm")
     print(f"  Delta: {delta:.1f} mm")
