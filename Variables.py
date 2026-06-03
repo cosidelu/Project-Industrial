@@ -33,6 +33,83 @@ def global_final_marker(local_pose):
     p_global = kin.homogeneous_trasform(H_marker, local_pose[:3])
     return p_global.tolist() + local_pose[3:]
 
+
+# ============================================================
+# POSIZIONI DI DEFAULT E JOINT
+# ============================================================
+
+# legacy defaults
+#DEFAULT_POSITIONING_JOINTS = [-132 , 0, -133, -48 , -42, 180]
+#DEFAULT_POSITIONING_POSE = [34, 400, 320, 90, 0, -90]
+
+#LOOK_DOWN_POSITION = [34,440,700,180,0,-90] -> usa il corrispondente j per univocità
+LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
+ 22.920495986938477,
+ -106.5320816040039,
+ -6.388057708740234,
+ -90.00030517578125,
+ 244.83934020996094 - 360]
+
+
+# ============================================================
+# CENTRO DEL CASCO
+# ============================================================
+
+HELMET_CENTER_GLOBAL = global_final_marker(local_start_marker(vbg.HELMET_CENTER_GLOBAL))
+
+
+# ============================================================
+# SEQUENZA APERTURA VISIERA
+# ============================================================
+
+VISIERA_0 = global_final_marker(local_start_marker(vbg.VISIERA_0))
+VISIERA_1 = global_final_marker(local_start_marker(vbg.VISIERA_1))
+VISIERA_2 = global_final_marker(local_start_marker(vbg.VISIERA_2))
+VISIERA_3 = global_final_marker(local_start_marker(vbg.VISIERA_3))
+VISIERA_4 = global_final_marker(local_start_marker(vbg.VISIERA_4))
+VISIERA_5 = global_final_marker(local_start_marker(vbg.VISIERA_5))
+
+
+# ============================================================
+# ALLONTANAMENTO
+# ============================================================
+
+ALLONTANAMENTO       = global_final_marker(local_start_marker(vbg.ALLONTANAMENTO))
+ALLONTANAMENTO_JOINT = vbg.ALLONTANAMENTO_JOINT  # joint — non trasformato
+
+
+# ============================================================
+# SOLE (chiusura visiera da sole)
+# ============================================================
+
+SOLE_1 = global_final_marker(local_start_marker(vbg.SOLE_1))
+SOLE_2 = global_final_marker(local_start_marker(vbg.SOLE_2))
+SOLE_3 = global_final_marker(local_start_marker(vbg.SOLE_3))
+SOLE_4 = global_final_marker(local_start_marker(vbg.SOLE_4))
+
+
+# ============================================================
+# LUNA (pressione pulsante)
+# ============================================================
+
+LUNA_1 = global_final_marker(local_start_marker(vbg.LUNA_1))
+LUNA_2 = global_final_marker(local_start_marker(vbg.LUNA_2))
+LUNA_3 = global_final_marker(local_start_marker(vbg.LUNA_3))
+LUNA_4 = LUNA_2  
+LUNA_5 = global_final_marker(local_start_marker(vbg.LUNA_5))
+LUNA_6 = global_final_marker(local_start_marker(vbg.LUNA_6))
+
+
+# ============================================================
+# SEQUENZA CHIUSURA VISIERA
+# ============================================================
+
+VISIERA_10_J = vbg.VISIERA_10_J  
+VISIERA_11   = global_final_marker(local_start_marker(vbg.VISIERA_11))
+VISIERA_12   = global_final_marker(local_start_marker(vbg.VISIERA_12))
+VISIERA_13   = global_final_marker(local_start_marker(vbg.VISIERA_13))
+VISIERA_14   = global_final_marker(local_start_marker(vbg.VISIERA_14))
+
 # Da qua in poi vanno cambiate trasformale prima in relative al marker nella posizione iniziale
 # poi definisci la nuova posizone del marker ruotato
 # le ritrasformi in globale -> devi aggiungere 180 alla rz
@@ -50,26 +127,10 @@ LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
  -90.00030517578125,
  244.83934020996094 - 360]
 
-def local_start_marker(local_pose):
-    """Calcola la posa del marker in coordinate locali rispetto alla posizione iniziale del casco."""
-    # Applica la trasformazione inversa del marker iniziale per ottenere la posa relativa
-    H_local = kin.compute_homogeneous_transform(local_pose)
-    H_relative = np.linalg.inv(H_marker) @ H_local
-    return kin.extract_pose_from_homogeneous(H_relative)
 
 
-def global_final_marker(local_pose):
-    """Calcola la posa finale del marker in coordinate globali a partire da una posa locale."""
-    # Applica la trasformazione del marker iniziale per ottenere la posa globale
-    H_relative = kin.compute_homogeneous_transform(local_pose)
-    H_global = H_marker @ H_relative
-    return kin.extract_pose_from_homogeneous(H_global)
 
 
-HELMET_CENTER_GLOBAL = global_final_marker(local_start_marker(vbg.HELMET_CENTER_GLOBAL))
-
-
-VISIERA_0 = global_final_marker(local_start_marker(vbg.VISIERA_0))
 
 
 
