@@ -17,20 +17,23 @@ anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in grad
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
 MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
 
-BASE_MARKER_POSE = [x, y, z, 0, 0, 0]
+NEW_MARKER_POSE = [0, 0, 0, 0, 0, 0]
+BASE_MARKER_POSE = [0, 0, 0, 0, 0, 0]
+
 H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
-
-
-
 H_marker_inv = kin.create_homogeneous_matrix(BASE_MARKER_POSE, Inverse=True)
-H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
+
+rot_z = 180
+
+H_marker_new = kin.create_homogeneous_matrix(NEW_MARKER_POSE)
 
 def local_start_marker(global_pose):
     p_local = kin.homogeneous_trasform(H_marker_inv, global_pose[:3]) #transform delle x,y,z
     return p_local.tolist() + global_pose[3:] #return con le 3 posizioni sovrascritte convertite in lista + le rotaz originali del p.to
 
 def global_final_marker(local_pose):
-    p_global = kin.homogeneous_trasform(H_marker, local_pose[:3])
+    p_global = kin.homogeneous_trasform(H_marker_new, local_pose[:3])
+    local_pose[-1] += rot_z
     return p_global.tolist() + local_pose[3:]
 
 
@@ -109,30 +112,3 @@ VISIERA_11   = global_final_marker(local_start_marker(vbg.VISIERA_11))
 VISIERA_12   = global_final_marker(local_start_marker(vbg.VISIERA_12))
 VISIERA_13   = global_final_marker(local_start_marker(vbg.VISIERA_13))
 VISIERA_14   = global_final_marker(local_start_marker(vbg.VISIERA_14))
-
-# Da qua in poi vanno cambiate trasformale prima in relative al marker nella posizione iniziale
-# poi definisci la nuova posizone del marker ruotato
-# le ritrasformi in globale -> devi aggiungere 180 alla rz
-
-# legacy defaults
-#DEFAULT_POSITIONING_JOINTS = [-132 , 0, -133, -48 , -42, 180]
-#DEFAULT_POSITIONING_POSE = [34, 400, 320, 90, 0, -90]
-
-#LOOK_DOWN_POSITION = [34,440,700,180,0,-90] -> usa il corrispondente j per univocità
-# DEFAULT POSITION FOR START AND END
-LOOK_DOWN_POSITION_J_INIZIO = [-115.16134643554688,
- 22.920495986938477,
- -106.5320816040039,
- -6.388057708740234,
- -90.00030517578125,
- 244.83934020996094 - 360]
-
-
-
-
-
-
-
-
-
-# ............................
