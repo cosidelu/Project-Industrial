@@ -14,7 +14,19 @@ anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in grad
 
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
 MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
-HELMET_CENTER_GLOBAL = [-1.1404489900286907, 661.6529292463887, 191.09565317703016 + 50] #trovato scendendo di 20cm dall'apice del casco
+
+# Abbassamento del centro sferico del casco [mm].
+# Serve a portare i difetti bassi (sotto il centro, dove |alpha| supererebbe i 90°
+# e finirebbe fuori dai limiti di sicurezza) dentro il dominio operativo.
+# CONSEGUENZA: abbassando il centro, l'apice reale del casco si allontana dal centro;
+# per evitare la collisione in alto il raggio di lavoro è reso variabile
+# (vedi spherical_movement.variable_helmet_radius).
+# >>> VALORE DA VERIFICARE E TARARE SUL ROBOT REALE <<<
+
+
+HELMET_CENTER_GLOBAL = [-1.1404489900286907,
+                        661.6529292463887,
+                        170]  # 20cm sotto l'apice, poi abbassato di HELMET_CENTER_LOWERING
 
 
 # legacy defaults
