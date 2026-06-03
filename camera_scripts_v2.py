@@ -23,10 +23,11 @@ WINDOW_NAME_MASK = "Maschera di Rilevamento Cumulativa"
 # ============================================================
 
 class defect():
-    def __init__(self, centroid = np.array([0, 0]), mask = None, bgr_img = None):
+    def __init__(self, centroid = np.array([0, 0]), area = 0,  mask = None, bgr_img = None):
         self.centroid = centroid    # np.array([cx, cy]) in pixels
         self.mask = mask            # binary mask of the defect in the image, same size as the input image
         self.bgr_img = bgr_img      # original BGR image
+        self.area = area
         self.points3d = None          # np.array of all 3D points corresponding to the defect mask, to be calculated from the point cloud and the mask
         self.pos3d_camera = None           # np.array([x, y, z]) in millimeters, to be calculated from the point cloud and the mask
         self.pos3d_global = None           # np.array([x, y, z]) in millimeters, to be calculated by transforming the camera coordinates into the global robot coordinates
@@ -209,7 +210,7 @@ def find_all_green_masks_and_centroids(bgr_image,
                 # Tracciamento riempito (cv2.FILLED) del singolo dominio poligonale
                 cv2.drawContours(mask_isolata, [contour], -1, 255, thickness=cv2.FILLED)
                 
-                difetti_estratti.append(defect(centroid=np.array([cx, cy]), mask=mask_isolata, bgr_img=bgr_image))
+                difetti_estratti.append(defect(centroid=np.array([cx, cy]), area = area,  mask=mask_isolata, bgr_img=bgr_image))
 
     return difetti_estratti
 
@@ -330,7 +331,7 @@ def find_all_generic_anomaly_masks_and_centroids(bgr_image,
                 # Tracciamento riempito (cv2.FILLED) del singolo dominio poligonale
                 cv2.drawContours(mask_isolata, [contour], -1, 255, thickness=cv2.FILLED)
 
-                difetti_estratti.append(defect(centroid=np.array([cx, cy]), mask=mask_isolata, bgr_img=bgr_image))
+                difetti_estratti.append(defect(centroid=np.array([cx, cy]), area = area, mask=mask_isolata, bgr_img=bgr_image))
 
     return difetti_estratti
 

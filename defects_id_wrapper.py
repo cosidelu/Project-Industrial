@@ -60,24 +60,33 @@ def take_defects_global(runtime, zed, image_zed, point_cloud, H_cam_to_global,
 def duplicate_filter(defect_list, distance_threshold=10.0):
     """
     Filtra i difetti duplicati basandosi sulla distanza euclidea tra le loro posizioni globali.
+    Quando due difetti sono troppo vicini, mantiene quello con area maggiore.
     Restituisce una nuova lista di difetti unici.
     """
-    unique_defects = defect_list.copy()
-    i = 0
-    j = 0
 
-    while i < len(unique_defects):
-        d_original = unique_defects[i]
-        j = i + 1  # Inizia a confrontare dal successivo
-        while j < len(unique_defects):
-            d_confronto = unique_defects[j]
-            dist = np.linalg.norm(d_original.pos3d_global - d_confronto.pos3d_global) # euclidean distance in mm
+    unique_defects = []
+    for d in defect_list:
+
+        placed = False
+        for idx, ud in enumerate(unique_defects):
+            dist = np.linalg.norm(d.pos3d_global - ud.pos3d_global)
             if dist < distance_threshold:
-                # Se i difetti sono troppo vicini, considerali duplicati e rimuovi il secondo
-                unique_defects.pop(j)
-            else:
-                j += 1 # Solo se non rimuoviamo, incrementiamo j per confrontare il prossimo difetto
-        i += 1
+                # Duplicati: mantieni quello con area maggiore usando `area` della classe
+                try:
+                    area_d = float(d.area)
+                except Exception:
+                    area_d = 0.0
+                try:
+                    area_ud = float(ud.area)
+                except Exception:
+                    area_ud = 0.0
+                if area_d > area_ud:
+                    unique_defects[idx] = d
+                placed = True
+                break
+
+        if not placed:
+            unique_defects.append(d)
 
     return unique_defects
 
