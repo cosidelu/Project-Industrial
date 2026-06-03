@@ -9,7 +9,7 @@ import time
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def variable_helmet_radius(alpha, beta, r_apex=400.0, r_side=300.0, r_back=300.0, r_front=500.0, r_min=300.0):
+def variable_helmet_radius(alpha, beta, r_apex=400.0, r_side=300.0, r_back=300.0, r_front=450.0, r_min=300.0):
     """
     Raggio di lavoro variabile in funzione degli angoli sferici (alpha, beta).
 
@@ -88,18 +88,18 @@ def angles_unsafe(alpha, beta):
         return True
 
     # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 120 gradi
-    if alpha > 105.0 or alpha < -95.0:
+    if alpha > 89 or alpha < -89.0:
         return True
 
     # 3. Controllo zona posteriore (retro): più larga che alta
     # A alpha = 0 la soglia è 20, a alpha = 90 la soglia sale a 30
-    beta_soglia_retro = 15.0 + 26.0 * (alpha / 90.0)**2
+    beta_soglia_retro = 20 + 25.0 * (alpha / 90.0)**2
     if beta < beta_soglia_retro:
         return True
 
     # 4. Controllo zona anteriore (fronte): più stretta che alta
     # A alpha = 0 la soglia massima ammessa è 110, a alpha = 90 sale a 140
-    beta_soglia_fronte = 130.0 + 0 * (alpha / 90.0)**2
+    beta_soglia_fronte = 110.0 + 0 * (alpha / 90.0)**2
     if beta > beta_soglia_fronte:
         return True
 
