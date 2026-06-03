@@ -304,10 +304,10 @@ def refine_defect_position(controller,
 
         n_def_shot = len(defect_list_shot)
         if n_def_shot == 0:
-            print(f"    Scatto {shot_idx + 1}/{n_shots}: nessun difetto, passo al prossimo scatto.")
+            #print(f"    Scatto {shot_idx + 1}/{n_shots}: nessun difetto, passo al prossimo scatto.")
             continue
 
-        print(f"    Scatto {shot_idx + 1}/{n_shots}: rilevati {n_def_shot} difetti.")
+        #print(f"    Scatto {shot_idx + 1}/{n_shots}: rilevati {n_def_shot} difetti.")
         best_match = None
         best_dist = float("inf")
 
@@ -330,11 +330,13 @@ def refine_defect_position(controller,
         else:
             found_str = "non trovato"
 
-        print(f"    Scatto {shot_idx + 1}/{n_shots}: {found_str}")
+        #print(f"    Scatto {shot_idx + 1}/{n_shots}: {found_str}")
         
     if len(refined_positions) <=8:
         print(f"  [ATTENZIONE] Sicurezza difetto {len(refined_positions)}/{n_shots} sotto la soglia, difetto scartato.")
         return False
+    else:
+        print(f"  [REFINE] Sicurezza difetto {len(refined_positions)}/{n_shots}, difetto raffinato")
 
     old_pos = defect_obj.pos3d_global.copy()
     mean_refined = np.mean(np.array(refined_positions), axis=0)
