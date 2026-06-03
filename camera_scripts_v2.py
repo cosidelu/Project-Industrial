@@ -260,13 +260,13 @@ def find_all_generic_anomaly_masks_and_centroids(bgr_image,
     # Rosso classico: in HSV il rosso si trova sia vicino a 0° sia vicino a 180°
     mask_red_1 = cv2.inRange(
         hsv,
-        np.array([0, 80, 50]),
-        np.array([12, 255, 255])
+        np.array([0, 130, 50]),
+        np.array([8, 255, 255])
     )
 
     mask_red_2 = cv2.inRange(
         hsv,
-        np.array([170, 80, 50]),
+        np.array([175, 130, 50]),
         np.array([179, 255, 255])
     )
 
