@@ -17,8 +17,9 @@ anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in grad
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
 MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore rispetto all'End Effector
 
+BASE_MARKER_POSE = [65.24002106997133, 355.93282222165686, 182.099561913089, 0,0,0] #già con l'Y_OFFSET, visiera verso il robot
+
 NEW_MARKER_POSE = [0, 0, 0, 0, 0, 0]
-BASE_MARKER_POSE = [0, 0, 0, 0, 0, 0]
 
 H_marker = kin.create_homogeneous_matrix(BASE_MARKER_POSE)
 H_marker_inv = kin.create_homogeneous_matrix(BASE_MARKER_POSE, Inverse=True)
