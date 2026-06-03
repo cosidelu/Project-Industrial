@@ -47,7 +47,7 @@ INSPECTION_POSITIONS = [
 INSPECTION_SPEED = 400
 
 # Velocità movimento durante marcatura [mm/s].
-MARKING_SPEED = 50
+MARKING_SPEED = 200
 
 # Raggio usato per il raffinamento.
 # Il robot va nella direzione del difetto, ma resta a questa distanza
