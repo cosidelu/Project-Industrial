@@ -215,21 +215,4 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
 
 
 if __name__ == "__main__":
-    # Plot radius surface as a function of alpha and beta.
-    alphas = np.linspace(-90.0, 90.0, 181)
-    betas = np.linspace(0.0, 180.0, 181)
-    A, B = np.meshgrid(alphas, betas)
-    R = np.vectorize(variable_helmet_radius)(A, B)
-
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    surf = ax.plot_surface(A, B, R, cmap='viridis', edgecolor='none', antialiased=True)
-
-    ax.set_title('Raggio variabile del casco in funzione di alpha e beta')
-    ax.set_xlabel('alpha [gradi]')
-    ax.set_ylabel('beta [gradi]')
-    ax.set_zlabel('raggio [mm]')
-    fig.colorbar(surf, shrink=0.5, aspect=10, label='raggio [mm]')
-
-    plt.tight_layout()
-    plt.show()
+    print("hi")
