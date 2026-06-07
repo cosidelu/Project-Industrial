@@ -4,6 +4,59 @@ Questo documento descrive il funzionamento e l'utilizzo dei quattro script princ
 
 ---
 
+**Notebooks**
+- **tests_inspection_marking.ipynb**: Notebook principale per orchestrare l'ispezione, il raffinamento e la marcatura passo-passo.
+- **tests_inspection_marking_together.ipynb**: Variante che esegue la pipeline combinata in un unico flusso di test.
+- **tests_opening.ipynb**: Notebook per testare sequenze di apertura/chiusura (visiera).
+- **test_spherical.ipynb**: Notebook per visualizzare e validare la cinematica sferica e i casi di limite.
+
+Apri i notebook con Jupyter / JupyterLab: `jupyter lab` o `jupyter notebook` nella root del progetto.
+
+**Sicurezza e limiti**
+- **Funzioni principali:** `angles_unsafe(alpha, beta)` e `is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta)` si trovano in [spherical_movement.py](spherical_movement.py).  
+- **Limiti implementati (ricavati dal codice):**
+  - `beta` deve essere nel range [0, 180] gradi.
+  - `alpha` è controllato con soglie asimmetriche: se `alpha > 105.0` o `alpha < -95.0` la posa è considerata non sicura.
+  - Zona posteriore: la soglia minima per `beta` è calcolata come `beta_soglia_retro = 15.0 + 26.0 * (alpha / 90.0)**2`; se `beta < beta_soglia_retro` la posa è pericolosa.
+  - Zona anteriore: limite superiore `beta_soglia_fronte = 130.0` (se `beta > 130` la posa è pericolosa).
+  - `is_trajectory_unsafe` discrertizza la traiettoria in `steps=100` (default) e considera la traiettoria non sicura se uno qualsiasi dei punti intermedi è non sicuro.
+  - Le funzioni di movimento applicano protezioni addizionali: archi angolari troppo ampi vengono suddivisi e, in caso di traiettoria non sicura, si devia tramite l'apice `(alpha=0, beta=90)`.
+  - Raccomandazione operativa: verificare sempre `move_circle_spherical` output e non bypassare i check di sicurezza automatici.
+
+**Diagramma delle dipendenze (Mermaid)**
+```mermaid
+graph LR
+  subgraph Vision
+    cam[camera_scripts_v2.py]
+  end
+  subgraph Processing
+    defects[defects_id_wrapper.py]
+    kin[kinematics_v2.py]
+  end
+  subgraph Robot
+    rc[robot_control.py]
+    tm[tm_libraries/]
+  end
+  subgraph Orchestration
+    im[inspection_and_marking.py]
+    sph[spherical_movement.py]
+  end
+
+  cam --> defects
+  defects --> kin
+  kin --> rc
+  im --> cam
+  im --> defects
+  im --> kin
+  im --> rc
+  sph --> kin
+  sph --> rc
+  rc --> tm
+  cam --> camera_libraries/
+```
+
+Nota: il diagramma è una rappresentazione semplificata; i moduli `kinematics_v2.py` e `camera_scripts_v2.py` sono utilizzati trasversalmente.
+
 ## 1. `robot_control.py` (Controllo Macchina)
 **Scopo:** Fornisce un'astrazione Python ad alto livello per il comando sincrono e bloccante del braccio robotico Techman tramite Modbus TCP.
 
@@ -11,7 +64,7 @@ Questo documento descrive il funzionamento e l'utilizzo dei quattro script princ
 Questa classe incapsula le logiche di movimento e monitoraggio della posa. L'esecuzione dei comandi di moto fermerà il programma Python finché il robot non raggiunge fisicamente l'obiettivo (o fino allo scadere di un timeout).
 
 **Costruttore ed Attributi:**
-- `__init__(ip_address="127.0.0.1", default_position_j=None)`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo), `self.default_timeout = 60.0` (secondi) e accetta opzionalmente una configurazione giunti di sicurezza (salvata in `self.default_position_j`).
+- `__init__(ip_address="127.0.0.1", default_position_j=None)`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo), `self.default_timeout = 300.0` (secondi) e accetta opzionalmente una configurazione giunti di sicurezza (salvata in `self.default_position_j`).
 
 **Metodi di Rete e Sicurezza:**
 - `connect()`: Apre la porta TCP (5890) del "Listen Node" del robot.
@@ -23,9 +76,9 @@ Questa classe incapsula le logiche di movimento e monitoraggio della posa. L'ese
 - `_wait_until_pose(target_pose, use_joints=False)`: Implementa un loop di *polling* continuo che confronta la posizione attuale (da TCP o sensori ai giunti) con il target. Se l'errore massimo tra tutti gli assi scende sotto `default_tolerance`, sblocca il programma. Solleva un'eccezione in caso di Timeout.
 
 **Metodi di Movimento:**
-- `move_ptp(pose, speed=50, data_format="CPP")`: Esegue un movimento Point-to-Point cartesiano nello spazio operativo.
-- `move_joints(joints, speed=100)`: Esegue un movimento puro nello spazio dei giunti. Utile per evitare singolarità.
-- `move_line(pose, speed=300, data_format="CAP")`: Esegue un movimento rettilineo lineare strettamente mantenuto dal TCP.
+- `move_ptp(pose, speed=SPEED, data_format="CPP")`: Esegue un movimento Point-to-Point cartesiano nello spazio operativo. Nota: nel codice la costante `SPEED` vale `300` ed internamente i movimenti PTP applicano uno scaling `PTP_SCALE = 0.1` (quindi il valore effettivo inviato al controller è `int(speed * 0.1)`).
+- `move_joints(joints, speed=SPEED)`: Esegue un movimento puro nello spazio dei giunti. `move_joints` usa lo stesso `SPEED` con lo scaling PTP.
+- `move_line(pose, speed=SPEED, data_format="CAP")`: Esegue un movimento rettilineo lineare strettamente mantenuto dal TCP (default `SPEED = 300`).
 - `move_circle(mid_point, end_point, speed=300)`: Esegue un arco tridimensionale partendo dal punto attuale e passando attraverso un punto intermedio `mid_point` fino ad arrivare in `end_point`.
 
 ### Esempio d'uso (Impostazione Posizione di Default)
@@ -73,7 +126,7 @@ Contenitore logico progressivo che incapsula tutte le caratteristiche di un sing
 - `draw_multiple_debug()`: Appiattisce tutti i difetti in una sola immagine per il monitor.
 - `take_defects_local(runtime, zed, image_zed, point_cloud, attention_radius=None, generic_detection=False)`: Master Workflow. Fa uno "scatto" fisico dalla telecamera, acquisendo immagine e point cloud. Se `generic_detection=False`, chiama `find_all_green_masks_and_centroids` per cercare il difetto verde. Se `generic_detection=True`, chiama `find_all_generic_anomaly_masks_and_centroids` per cercare difetti di colore generico tramite maschera inversa dei colori attesi del casco. In entrambi i casi itera sui difetti rilevati, popola `points3d` tramite `extract_3d_points_from_mask` e assegna `pos3d_camera`. Tramite `attention_radius` permette di restringere la ricerca al solo centro dell'ottica per escludere il rumore periferico.
 
----
+
 
 ## 3. `kinematics_v2.py` (Motore Matematico e Cinematica)
 **Scopo:** Implementa l'algebra lineare richiesta per la composizione delle matrici e le trasformazioni dello spazio Euclideo (Eye-in-Hand) e Sferico (ispezioni a cupola). Non possiede memoria o dipendenze hardware.
