@@ -26,36 +26,45 @@ Apri i notebook con Jupyter / JupyterLab: `jupyter lab` o `jupyter notebook` nel
 **Diagramma delle dipendenze (Mermaid)**
 ```mermaid
 graph LR
-  subgraph Vision
-    cam[camera_scripts_v2.py]
-  end
-  subgraph Processing
-    defects[defects_id_wrapper.py]
-    kin[kinematics_v2.py]
-  end
-  subgraph Robot
+  %% Base modules (left)
+  subgraph Base [Base modules]
+    direction TB
     rc[robot_control.py]
-    tm[tm_libraries/]
-  end
-  subgraph Orchestration
-    im[inspection_and_marking.py]
-    sph[spherical_movement.py]
+    kin[kinematics_v2.py]
+    cam[camera_scripts_v2.py]
+    vars[Variables.py]
   end
 
-  cam --> defects
-  defects --> kin
-  kin --> rc
-  im --> cam
-  im --> defects
-  im --> kin
-  im --> rc
-  sph --> kin
-  sph --> rc
-  rc --> tm
-  cam --> camera_libraries/
+  %% Higher-level modules (right)
+  subgraph High [Higher-level modules]
+    direction TB
+    sph[spherical_movement.py]
+    defects[defects_id_wrapper.py]
+    im[inspection_and_marking.py]
+  end
+
+  %% Base -> Higher-level (labels show key functions/imports)
+
+  rc -->|RobotController| sph
+  rc -->|RobotController| im
+
+  kin -->|"to_helmet_coordinates\ncompute_ee_pose_for_tool_target"| sph
+  kin -->|"create_homogeneous_matrix\nhomogeneous_trasform"| defects
+  kin -->|to_helmet_coordinates| im
+
+  cam -->|take_defects_local| defects
+  cam -->|draw_multiple_debug| im
+
+  vars -->|"HELMET_CENTER_GLOBAL\nCAMERA_POSE_EE\nMARKER_POSE_EE"| im
+  vars -->|HELMET_CENTER_GLOBAL| sph
+
+  defects -->|"take_defects_global\nduplicate_filter"| im
+
+  %% Explicit spherical movement edge required by inspection
+  sph -->|move_circle_spherical| im
 ```
 
-Nota: il diagramma è una rappresentazione semplificata; i moduli `kinematics_v2.py` e `camera_scripts_v2.py` sono utilizzati trasversalmente.
+Nota: il diagramma ora posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
 
 ## 1. `robot_control.py` (Controllo Macchina)
 **Scopo:** Fornisce un'astrazione Python ad alto livello per il comando sincrono e bloccante del braccio robotico Techman tramite Modbus TCP.
