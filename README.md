@@ -25,7 +25,7 @@ Apri i notebook con Jupyter / JupyterLab: `jupyter lab` o `jupyter notebook` nel
 
 **Diagramma delle dipendenze (Mermaid)**
 ```mermaid
-graph LR
+flowchart LR
   %% Base modules (left)
   subgraph Base [Base modules]
     direction TB
@@ -79,7 +79,7 @@ move_to_hub| nb_together
   vars -->|EE_POSES| nb_open
 ```
 
-Nota: il diagramma ora posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
+Nota: il diagramma posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
 
 ## 1. `robot_control.py` (Controllo Macchina)
 **Scopo:** Fornisce un'astrazione Python ad alto livello per il comando sincrono e bloccante del braccio robotico Techman tramite Modbus TCP.
