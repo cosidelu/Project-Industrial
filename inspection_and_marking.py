@@ -6,7 +6,7 @@ import kinematics_v2 as kin
 from Variables import HELMET_CENTER_GLOBAL, CAMERA_POSE_EE, MARKER_POSE_EE
 
 from robot_control import RobotController
-from spherical_movement import move_circle_spherical
+from spherical_movement import move_circle_spherical, variable_helmet_radius
 
 from defects_id_wrapper import (
     take_defects_global,
@@ -31,6 +31,15 @@ GENERIC_DETECTION = False
 # IP del robot reale in laboratorio.
 # Per simulazione/test locale puoi mettere "127.0.0.1".
 IP_ROBOT = "192.168.1.3"
+
+# Legge del raggio di lavoro VARIABILE in funzione di (alpha, beta) -> mm.
+# È ciò che viene passato a move_circle_spherical al posto di un raggio costante:
+# più ampio all'apice (per non collidere col casco dopo l'abbassamento del centro),
+# più stretto ai lati e su retro/fronte. Viene valutata punto per punto lungo la traiettoria.
+# Per tarare i tre valori di ancoraggio (apice/lati/retro) modifica i default di
+# variable_helmet_radius, oppure passa qui una lambda:
+#   INSPECTION_RADIUS_FN = lambda a, b: variable_helmet_radius(a, b, r_apex=450)
+INSPECTION_RADIUS_FN = variable_helmet_radius
 
 # Raggio della sfera di ispezione attorno al casco [mm].
 INSPECTION_RADIUS = 300
@@ -140,7 +149,7 @@ def move_to_hub(controller, hub = [0, 0, 90]):
     if not move_circle_spherical(
         controller=controller,
         end_sph_coord=hub,
-        radius=INSPECTION_RADIUS,
+        radius=INSPECTION_RADIUS_FN,
         tool_pose_ee=CAMERA_POSE_EE,
         helmet_center=HELMET_CENTER_GLOBAL,
         speed=INSPECTION_SPEED
@@ -157,7 +166,7 @@ def point_and_shoot(controller,
                                  point_cloud,
                                  test_sph,
                                  helmet_center=HELMET_CENTER_GLOBAL,
-                                 insp_radius=INSPECTION_RADIUS):
+                                 insp_radius=INSPECTION_RADIUS_FN):
     
     if not move_circle_spherical(
         controller=controller,
@@ -213,7 +222,7 @@ def refine_defect_position(controller,
                            point_cloud,
                            defect_obj,
                            helmet_center = HELMET_CENTER_GLOBAL,
-                           close_radius=CLOSE_INSPECTION_RADIUS,
+                           close_radius=INSPECTION_RADIUS_FN,
                            n_shots=N_CLOSE_SHOTS,
                            generic_detection=GENERIC_DETECTION):
     """
@@ -399,7 +408,7 @@ def mark_defect(controller,
     if not move_circle_spherical(
         controller=controller,
         end_sph_coord=def_sph,
-        radius=CLOSE_INSPECTION_RADIUS,
+        radius=INSPECTION_RADIUS_FN,
         tool_pose_ee=CAMERA_POSE_EE,
         helmet_center=helmet_center,
         speed=INSPECTION_SPEED
@@ -407,7 +416,7 @@ def mark_defect(controller,
         print("  [SKIP] Impossibile raggiungere la posizione di mark in sicurezza.")
         return False
     else:
-        print(f"  Movimento camera a r={CLOSE_INSPECTION_RADIUS}mm nella direzione del difetto.")
+        print(f"  Movimento camera nella direzione del difetto.")
 
 
     pos = defect_obj.pos3d_global
