@@ -18,7 +18,7 @@ class RobotController:
         self.robot = tm.TM_Robot(ip_address)
         self.default_tolerance = 0.5
         self.default_timeout = 300.0
-        self.secure_wait = 0.1
+        self.secure_wait = 0.01
         self.default_position_j = default_position_j
 
     def connect(self):
@@ -62,7 +62,7 @@ class RobotController:
             if time.time() - start > self.default_timeout:
                 raise TimeoutError(f"Target non raggiunto. Errore: {np.round(errors, 2)}")
             
-            time.sleep(0.1) #to not overload the robot with status requests
+            time.sleep(0.01) #to not overload the robot with status requests
 
     def move_ptp(self, pose, speed=SPEED, data_format="CPP"):
         """Esegue un movimento PTP (Punto-Punto) e attende il completamento"""
