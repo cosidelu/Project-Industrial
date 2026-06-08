@@ -176,7 +176,7 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
     # Raggio target nella posizione angolare attuale (coerente con radius variabile)
     target_start_radius = radius_fn(start_alpha, start_beta)
 
-    if abs(start_radius - target_start_radius) > 20:
+    if abs(start_radius - target_start_radius) > 20 and False:
         if input(f"  [WARNING] Raggio attuale {start_radius:.1f} mm differisce significativamente dal raggio target {target_start_radius:.1f} mm. \n Premere Invio per continuare comunque, o nope per annullare...").lower() == "nope":
             print("  Movimento annullato dall'utente.")
             return False

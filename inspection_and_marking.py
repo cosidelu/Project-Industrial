@@ -56,7 +56,7 @@ INSPECTION_POSITIONS = [
 INSPECTION_SPEED = 400
 
 # Velocità movimento durante marcatura [mm/s].
-MARKING_SPEED = 200
+MARKING_SPEED = 300
 
 # Raggio usato per il raffinamento.
 # Il robot va nella direzione del difetto, ma resta a questa distanza
@@ -278,7 +278,7 @@ def refine_defect_position(controller,
         print(f"  Movimento camera a r={close_radius}mm nella direzione del difetto.")
 
 
-    time.sleep(1)
+    time.sleep(0.5)
 
     refined_positions = []
 
