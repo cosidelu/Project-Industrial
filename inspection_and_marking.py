@@ -357,6 +357,8 @@ def refine_defect_position(controller,
     new_spherical_coord = kin.to_helmet_angles(mean_refined, helmet_center)
     new_r, new_alpha, new_beta = new_spherical_coord
 
+    defect_obj.sph_coord = np.array([new_r, new_alpha, new_beta])
+
     print("  Raffinamento completato.")
     print(f"  Nuove coordinate sferiche:")
     print(f"    r={new_r:.1f} mm, alpha={new_alpha:.1f}°, beta={new_beta:.1f}°")
