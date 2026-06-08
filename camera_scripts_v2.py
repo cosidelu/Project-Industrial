@@ -11,8 +11,8 @@ LOWER_GREEN = np.array([35, 80, 80])
 UPPER_GREEN = np.array([85, 255, 255])
 
 # Minimum blob area to accept a green region as valid
-MIN_GREEN_AREA = 300
-MIN_ANOMALY_AREA = 300
+MIN_GREEN_AREA = 800
+MIN_ANOMALY_AREA = 800
 
 # Nomi delle finestre di OpenCV per il rendering
 WINDOW_NAME_RGB = "Analisi RGB Multipla"

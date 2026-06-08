@@ -29,7 +29,7 @@ def angles_unsafe(alpha, beta):
 
     # 3. Controllo zona posteriore (retro): più larga che alta
     # A alpha = 0 la soglia è 20, a alpha = 90 la soglia sale a 30
-    beta_soglia_retro = 15.0 + 26.0 * (alpha / 90.0)**2
+    beta_soglia_retro = 15.0 + 25.0 * abs((alpha / 90.0)**3)
     if beta < beta_soglia_retro:
         return True
 
