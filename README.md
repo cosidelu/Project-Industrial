@@ -1,8 +1,85 @@
 # Istruzioni per l'uso e Descrizione dei Moduli
 
-Questo documento descrive il funzionamento e l'utilizzo dei quattro script principali che compongono il sistema di rilevamento difetti e controllo del robot Techman.
+Questo documento descrive l'architettura, le funzionalità principali e gli strumenti di test del progetto.
 
----
+Il repository include moduli Python dedicati a:
+- controllo robotico e movimento (`robot_control.py`),
+- cinematica e trasformazioni spaziali (`kinematics_v2.py`),
+- elaborazione immagini e ZED camera (`camera_scripts_v2.py`),
+- orchestrazione del flusso di difetto globale (`defects_id_wrapper.py`),
+- movimento sferico e sicurezza limite attorno al casco (`spherical_movement.py`), con controlli `alpha`/`beta`, zone pericolose e deviazioni automatiche per traiettorie non sicure,
+- configurazione e pose di riferimento (`Variables.py`).
+
+I notebook inclusi servono a verificare e a eseguire i flussi di lavoro in modo interattivo: ispezione, marcatura, apertura della visiera, cinematica sferica e posizionamento del casco.
+
+**Notebooks principali**
+- **Helmet positioning.ipynb**: Notebook di configurazione e calibrazione del casco. Usa pose di riferimento, frame strumentali ed end-effector per validare i parametri di posizionamento e preparare il setup robotico prima di avviare l'ispezione.
+- **PHASE1_opening.ipynb**: Notebook che esegue automaticamente l'apertura e la chiusura di entrambe le visiere.
+- **PHASE2_inspection_marking_together.ipynb**: Notebook finale del progetto per l'esecuzione integrata di ispezione e marcatura. Combina rilevamento difetti, coordinate globali e controllo utensile in un flusso completo per l'idenficazione, il raffinamento e la marcatura di tutti i difetti presenti sul casco.
+
+**Notebook di test**
+- **tests_inspection_marking.ipynb**: Notebook di debug e validazione del processo di ispezione e marcatura. Consente di eseguire passaggi singoli, verificare i dati dei difetti e affinare i parametri della pipeline.
+- **test_spherical.ipynb**: Notebook di validazione della cinematica sferica. Controlla limiti `alpha`/`beta`, traiettorie sicure, suddivisione degli archi e le funzioni di sicurezza del modulo `spherical_movement.py`.
+
+Apri i notebook con Jupyter / JupyterLab: `jupyter lab` o `jupyter notebook` nella root del progetto.
+
+**Diagramma delle dipendenze (Mermaid)**
+```mermaid
+flowchart LR
+  %% Base modules (left)
+  subgraph Base [Base modules]
+    direction TB
+    vars[Variables.py]
+    rc[robot_control.py]
+    kin[kinematics_v2.py]
+    cam[camera_scripts_v2.py]
+  end
+
+  %% Higher-level modules (right)
+  subgraph High [Higher-level modules]
+    direction TB
+    sph[spherical_movement.py]
+    defects[defects_id_wrapper.py]
+    im[inspection_and_marking.py]
+  end
+
+  %% Notebooks (rightmost)
+  subgraph NB [Notebooks]
+    direction TB
+    nb_together[PHASE2_inspection_marking_together.ipynb]
+    nb_open[PHASE1_opening.ipynb]
+  end
+
+  %% Base -> Higher-level (labels show key functions/imports)
+
+  rc -->|RobotController| sph
+  rc -->|RobotController| im
+
+  kin -->|"create_homogeneous_matrix\nhomogeneous_trasform"| defects
+  kin -->|to_helmet_coordinates| im
+  kin -->|"to_helmet_coordinates\ncompute_ee_pose_for_tool_target"| sph
+
+  cam -->|take_defects_local| defects
+  cam -->|draw_multiple_debug| im
+
+  vars -->|HELMET_CENTER_GLOBAL| sph
+  vars -->|"HELMET_CENTER_GLOBAL\nCAMERA_POSE_EE\nMARKER_POSE_EE"| im
+  
+  defects -->|"take_defects_global\nduplicate_filter"| im
+
+  %% Explicit spherical movement edge required by inspection
+  sph -->|move_circle_spherical| im
+
+  %% Notebooks usage links
+  im -->|point_and_shoot
+refine_defect_position
+mark_defect
+move_to_hub| nb_together
+  rc --> nb_open
+  vars -->|EE_POSES| nb_open
+```
+
+Nota: il diagramma posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
 
 ## 1. `robot_control.py` (Controllo Macchina)
 **Scopo:** Fornisce un'astrazione Python ad alto livello per il comando sincrono e bloccante del braccio robotico Techman tramite Modbus TCP.
@@ -11,7 +88,7 @@ Questo documento descrive il funzionamento e l'utilizzo dei quattro script princ
 Questa classe incapsula le logiche di movimento e monitoraggio della posa. L'esecuzione dei comandi di moto fermerà il programma Python finché il robot non raggiunge fisicamente l'obiettivo (o fino allo scadere di un timeout).
 
 **Costruttore ed Attributi:**
-- `__init__(ip_address="127.0.0.1", default_position_j=None)`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo), `self.default_timeout = 60.0` (secondi) e accetta opzionalmente una configurazione giunti di sicurezza (salvata in `self.default_position_j`).
+- `__init__(ip_address="127.0.0.1", default_position_j=None)`: Inizializza l'oggetto di base del TM. Configura `self.default_tolerance = 1.0` (in mm/gradi per l'errore di arrivo), `self.default_timeout = 300.0` (secondi) e accetta opzionalmente una configurazione giunti di sicurezza (salvata in `self.default_position_j`).
 
 **Metodi di Rete e Sicurezza:**
 - `connect()`: Apre la porta TCP (5890) del "Listen Node" del robot.
@@ -23,9 +100,9 @@ Questa classe incapsula le logiche di movimento e monitoraggio della posa. L'ese
 - `_wait_until_pose(target_pose, use_joints=False)`: Implementa un loop di *polling* continuo che confronta la posizione attuale (da TCP o sensori ai giunti) con il target. Se l'errore massimo tra tutti gli assi scende sotto `default_tolerance`, sblocca il programma. Solleva un'eccezione in caso di Timeout.
 
 **Metodi di Movimento:**
-- `move_ptp(pose, speed=50, data_format="CPP")`: Esegue un movimento Point-to-Point cartesiano nello spazio operativo.
-- `move_joints(joints, speed=100)`: Esegue un movimento puro nello spazio dei giunti. Utile per evitare singolarità.
-- `move_line(pose, speed=300, data_format="CAP")`: Esegue un movimento rettilineo lineare strettamente mantenuto dal TCP.
+- `move_ptp(pose, speed=SPEED, data_format="CPP")`: Esegue un movimento Point-to-Point cartesiano nello spazio operativo. Nota: nel codice la costante `SPEED` vale `300` ed internamente i movimenti PTP applicano uno scaling `PTP_SCALE = 0.1` (quindi il valore effettivo inviato al controller è `int(speed * 0.1)`).
+- `move_joints(joints, speed=SPEED)`: Esegue un movimento puro nello spazio dei giunti. `move_joints` usa lo stesso `SPEED` con lo scaling PTP.
+- `move_line(pose, speed=SPEED, data_format="CAP")`: Esegue un movimento rettilineo lineare strettamente mantenuto dal TCP (default `SPEED = 300`).
 - `move_circle(mid_point, end_point, speed=300)`: Esegue un arco tridimensionale partendo dal punto attuale e passando attraverso un punto intermedio `mid_point` fino ad arrivare in `end_point`.
 
 ### Esempio d'uso (Impostazione Posizione di Default)
@@ -48,18 +125,21 @@ controller.default_positioning()
 **Scopo:** Interagisce con le SDK della ZED, segmenta lo spazio colore delle immagini ed estrae i dati dalla Point Cloud.
 
 ### Classe: `defect`
-Contenitore logico progressivo che incapsula tutte le caratteristiche di un singolo difetto rilevato nell'immagine, sia esso uno sticker verde oppure una regione di colore anomalo rispetto ai colori attesi del casco.
+Contenitore dati corrispondente all'implementazione in `camera_scripts_v2.py`.
 
-**Attributi (Memoria):**
+**Attributi:**
 - `centroid` (numpy array): Coordinate pixel `[cx, cy]` nel frame dell'immagine 2D.
-- `mask` (numpy array): Immagine binaria di ugual dimensione alla foto, contiene bianco (255) SOLO sul difetto, nero (0) altrove.
-- `bgr_img` (numpy array): Copia della foto originale in OpenCV in cui il difetto è stato trovato.
-- `points3d` (lista): Tutti i punti 3D tridimensionali associati ai pixel della `mask` estratti dalla point cloud.
-- `pos3d_camera` (numpy array): Media stabilizzata in coordinate locali rispetto alla telecamera `[X, Y, Z]` (in mm).
-- `pos3d_global` (numpy array): Punto globale `[X, Y, Z]` (in mm) tradotto rispetto all'End-Effector (calcolato in Fase 4).
+- `area` (float): Area del contorno in pixel.
+- `mask` (numpy array): Maschera binaria della stessa dimensione dell'immagine (255 sulla regione del difetto, 0 altrove).
+- `bgr_img` (numpy array): Immagine BGR originale usata per annotazioni.
+- `points3d` (np.array | None): Punti 3D estratti dalla point-cloud corrispondenti ai pixel della maschera.
+- `pos3d_camera` (np.array | None): Stima media 3D nel sistema della camera (mm).
+- `pos3d_global` (np.array | None): Posizione globale (mm), valorizzata da moduli esterni quando calcolata.
+- `sph_coord` (np.array | None): Coordinate sferiche `[r, alpha, beta]` (se calcolate altrove).
 
-**Metodi:**
-- `img()`: Restituisce un'immagine per display visivo unendo `bgr_img`, l'overlay di `mask`, un punto sul `centroid` e il testo testuale delle coordinate spaziali calcolate.
+**Metodi implementati:**
+- `img()`: Restituisce l'immagine annotata: overlay della `mask`, cerchio al `centroid` e (se presente) testo con le coordinate `pos3d_global` nell'angolo.
+- `say_hi(Name=None)`: Stampa su console informazioni di debug: `centroid`, `pos3d_camera` (con Z e distanza radiale), `pos3d_global` e `sph_coord` quando disponibili.
 
 ### Funzioni Hardware ZED
 - `init_zed()`: Configura l'hardware. Modalità Depth Neurale e unità in Millimetri. Inizializza i contenitori vuoti in C++ (Mat) e la SDK.
@@ -73,7 +153,7 @@ Contenitore logico progressivo che incapsula tutte le caratteristiche di un sing
 - `draw_multiple_debug()`: Appiattisce tutti i difetti in una sola immagine per il monitor.
 - `take_defects_local(runtime, zed, image_zed, point_cloud, attention_radius=None, generic_detection=False)`: Master Workflow. Fa uno "scatto" fisico dalla telecamera, acquisendo immagine e point cloud. Se `generic_detection=False`, chiama `find_all_green_masks_and_centroids` per cercare il difetto verde. Se `generic_detection=True`, chiama `find_all_generic_anomaly_masks_and_centroids` per cercare difetti di colore generico tramite maschera inversa dei colori attesi del casco. In entrambi i casi itera sui difetti rilevati, popola `points3d` tramite `extract_3d_points_from_mask` e assegna `pos3d_camera`. Tramite `attention_radius` permette di restringere la ricerca al solo centro dell'ottica per escludere il rumore periferico.
 
----
+
 
 ## 3. `kinematics_v2.py` (Motore Matematico e Cinematica)
 **Scopo:** Implementa l'algebra lineare richiesta per la composizione delle matrici e le trasformazioni dello spazio Euclideo (Eye-in-Hand) e Sferico (ispezioni a cupola). Non possiede memoria o dipendenze hardware.
@@ -148,14 +228,7 @@ print("Posa TCP richiesta:", np.round(ee_target_pose, 2))
 ### Operazioni Logiche e Spaziali (Algoritmi di Filtraggio Dati)
 - `cam_cylinder_filter(defect_list, radius, height_range)`: Agisce nello spazio _locale_ prima della globalizzazione. Rimuove i difetti estrapolati che risultano ai margini distorti (fuori dal cilindro di raggio X centrato sull'asse Z dell'ottica) o fuori da un range di Z (es: troppo vicini o lontani dalla focale ottima).
 - `glob_position_filter(defect_list, range, center)`: Scarta tutto ciò che, pur essendo stato rilevato come difetto cromatico, si trova ad una distanza euclidea globale (`np.linalg.norm`) incompatibile col diametro del casco (es. bottiglie, vestiti sullo sfondo dell'officina).
-- `duplicate_filter(defect_list, distance_threshold=25.0)`: Previene che scatti sovrapposti facciano registrare due volte il medesimo bersaglio. Esegue un check incrociato (O(N^2)) su tutti i difetti in memoria e rimuove i successivi se presentano uno scarto euclideo globale inferiore alla tolleranza.
-
-### Processo di Esecuzione (Main Block)
-Se avviato da terminale (`python defects_id_wrapper.py`), questo file opera in Test Mode:
-1. Definisce pose fasulle manuali per `ee_pose_global` e il `camera_offset` (non necessita del robot connesso).
-2. Aspetta input umano (SPAZIO).
-3. Simula la catena tramite l'invocazione di `take_defects_global` e produce il rendering a display. Il test può essere eseguito sia in modalità classica, con `generic_detection=False`, sia in modalità rilevamento generico, con `generic_detection=True`.
-4. All'uscita (ESC) scarta tutti i cloni tramite `duplicate_filter` e stampa progressivamente le coordinate pulite di ogni ritrovamento a monitor per verifica.
+- `duplicate_filter(defect_list, distance_threshold=10.0)`: Filtra i difetti duplicati confrontando la distanza euclidea tra gli attributi `pos3d_global`. Quando due difetti sono più vicini di `distance_threshold` mantiene quello con `area` maggiore; restituisce una nuova lista di difetti unici.
 
 ### Esempio d'uso (`take_defects_global`)
 
