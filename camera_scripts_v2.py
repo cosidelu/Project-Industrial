@@ -11,8 +11,8 @@ LOWER_GREEN = np.array([35, 80, 80])
 UPPER_GREEN = np.array([85, 255, 255])
 
 # Minimum blob area to accept a green region as valid
-MIN_GREEN_AREA = 150
-MIN_ANOMALY_AREA = 150
+MIN_GREEN_AREA = 300
+MIN_ANOMALY_AREA = 300
 
 # Nomi delle finestre di OpenCV per il rendering
 WINDOW_NAME_RGB = "Analisi RGB Multipla"
@@ -66,6 +66,7 @@ class defect():
 
         if self.centroid is not None:
             print(f"        centroid: {self.centroid}")
+            print(f"        area: {self.area}")
 
         if self.pos3d_camera is not None:
             radial_camera = np.sqrt(self.pos3d_camera[0] ** 2 + self.pos3d_camera[1] ** 2)

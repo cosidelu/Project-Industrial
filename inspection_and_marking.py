@@ -65,7 +65,7 @@ ASSOCIATION_THRESHOLD = 30.0
 MIN_APPROACH_RADIUS = 250
 
 # Distanza massima per scartare un difetto vicino ad un altro [mm]
-DUPLICATE_DISTANCE = 25
+DUPLICATE_DISTANCE = 15
 
 # =====================================================
 # PARAMETRI FILTRI / TUNING
