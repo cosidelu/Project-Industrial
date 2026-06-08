@@ -2,27 +2,6 @@
 
 Questo documento descrive l'architettura, le funzionalità principali e gli strumenti di test del progetto.
 
-Il repository include moduli Python dedicati a:
-- controllo robotico e movimento (`robot_control.py`),
-- cinematica e trasformazioni spaziali (`kinematics_v2.py`),
-- elaborazione immagini e ZED camera (`camera_scripts_v2.py`),
-- orchestrazione del flusso di difetto globale (`defects_id_wrapper.py`),
-- movimento sferico e sicurezza limite attorno al casco (`spherical_movement.py`), con controlli `alpha`/`beta`, zone pericolose e deviazioni automatiche per traiettorie non sicure,
-- configurazione e pose di riferimento (`Variables.py`).
-
-I notebook inclusi servono a verificare e a eseguire i flussi di lavoro in modo interattivo: ispezione, marcatura, apertura della visiera, cinematica sferica e posizionamento del casco.
-
-**Notebooks principali**
-- **Helmet positioning.ipynb**: Notebook di configurazione e calibrazione del casco. Usa pose di riferimento, frame strumentali ed end-effector per validare i parametri di posizionamento e preparare il setup robotico prima di avviare l'ispezione.
-- **PHASE1_opening.ipynb**: Notebook che esegue automaticamente l'apertura e la chiusura di entrambe le visiere.
-- **PHASE2_inspection_marking_together.ipynb**: Notebook finale del progetto per l'esecuzione integrata di ispezione e marcatura. Combina rilevamento difetti, coordinate globali e controllo utensile in un flusso completo per l'idenficazione, il raffinamento e la marcatura di tutti i difetti presenti sul casco.
-
-**Notebook di test**
-- **tests_inspection_marking.ipynb**: Notebook di debug e validazione del processo di ispezione e marcatura. Consente di eseguire passaggi singoli, verificare i dati dei difetti e affinare i parametri della pipeline.
-- **test_spherical.ipynb**: Notebook di validazione della cinematica sferica. Controlla limiti `alpha`/`beta`, traiettorie sicure, suddivisione degli archi e le funzioni di sicurezza del modulo `spherical_movement.py`.
-
-Apri i notebook con Jupyter / JupyterLab: `jupyter lab` o `jupyter notebook` nella root del progetto.
-
 **Diagramma delle dipendenze (Mermaid)**
 ```mermaid
 flowchart LR
@@ -53,33 +32,62 @@ flowchart LR
   %% Base -> Higher-level (labels show key functions/imports)
 
   rc -->|RobotController| sph
-  rc -->|RobotController| im
+  rc -->|RobotController| nb_together
+  rc -->|RobotController| nb_open
 
-  kin -->|"create_homogeneous_matrix\nhomogeneous_trasform"| defects
-  kin -->|to_helmet_coordinates| im
-  kin -->|"to_helmet_coordinates\ncompute_ee_pose_for_tool_target"| sph
 
-  cam -->|take_defects_local| defects
+  kin -->|"create_homogeneous_matrix\nhomogeneous_trasform\nto_helmet_angles"| defects
+  kin -->|to_helmet_coordinates\nto_helmet_angles\ncompute_ee_pose_for_tool_target| im
+  kin -->|"to_helmet_coordinates\nto_helmet_angles\ncompute_ee_pose_for_tool_target"| sph
+
+  cam -->|take_defects_local\n| defects
   cam -->|draw_multiple_debug| im
 
-  vars -->|HELMET_CENTER_GLOBAL| sph
   vars -->|"HELMET_CENTER_GLOBAL\nCAMERA_POSE_EE\nMARKER_POSE_EE"| im
   
   defects -->|"take_defects_global\nduplicate_filter"| im
 
   %% Explicit spherical movement edge required by inspection
-  sph -->|move_circle_spherical| im
+  sph -->|move_circle_spherical\nvariable_helmet_radius| im
 
   %% Notebooks usage links
   im -->|point_and_shoot
 refine_defect_position
 mark_defect
 move_to_hub| nb_together
-  rc --> nb_open
   vars -->|EE_POSES| nb_open
 ```
 
 Nota: il diagramma posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
+
+Il repository include moduli Python dedicati a:
+- controllo robotico e movimento (`robot_control.py`),
+- cinematica e trasformazioni spaziali (`kinematics_v2.py`),
+- elaborazione immagini e ZED camera (`camera_scripts_v2.py`),
+- orchestrazione del flusso di difetto globale (`defects_id_wrapper.py`),
+- movimento sferico e sicurezza limite attorno al casco (`spherical_movement.py`), con controlli `alpha`/`beta`, superficie di lavoro a raggio variabile tipo paraboloide/ellissoide e deviazioni automatiche per traiettorie non sicure,
+- configurazione e pose di riferimento (`Variables.py`).
+
+`move_circle_spherical` utilizza `variable_helmet_radius(alpha, beta)` per calcolare un raggio variabile che approssima la forma reale del casco. Il modello usa un centro virtuale leggermente più basso rispetto al vero centro del casco per raggiungere tutti i punti della cupola e produce una superficie di lavoro simile a un paraboloide/ellissoide:
+
+- `r = r_apex - (r_apex - r_side) * sin^2(alpha)
+       - (r_apex - r_back) * cos^2(beta)
+       + (r_front - r_apex) * sin^2(beta-90)`
+
+Il valore viene poi limitato da `r_min` per non scendere sotto il raggio minimo sicuro. Questo significa che il raggio è più corto sui lati e sul retro, e più lungo verso l'apice e il fronte.
+
+Per vedere il grafico della superficie di raggio, esegui `python spherical_movement.py` dalla root del progetto; il modulo contiene un blocco `if __name__ == "__main__"` che plotta la funzione su una griglia di `alpha` e `beta`.
+
+I notebook inclusi servono a verificare e a eseguire i flussi di lavoro in modo interattivo: ispezione, marcatura, apertura della visiera, cinematica sferica e posizionamento del casco.
+
+**Notebooks principali**
+- **Helmet positioning.ipynb**: Notebook di configurazione e calibrazione del casco. Usa pose di riferimento, frame strumentali ed end-effector per validare i parametri di posizionamento e preparare il setup robotico prima di avviare l'ispezione.
+- **PHASE1_opening.ipynb**: Notebook che esegue automaticamente l'apertura e la chiusura di entrambe le visiere.
+- **PHASE2_inspection_marking_together.ipynb**: Notebook finale del progetto per l'esecuzione integrata di ispezione e marcatura. Combina rilevamento difetti, coordinate globali e controllo utensile in un flusso completo per l'idenficazione, il raffinamento e la marcatura di tutti i difetti presenti sul casco.
+
+**Notebook di test**
+- **tests_inspection_marking.ipynb**: Notebook di debug e validazione del processo di ispezione e marcatura. Consente di eseguire passaggi singoli, verificare i dati dei difetti e affinare i parametri della pipeline.
+- **test_spherical.ipynb**: Notebook di validazione della cinematica sferica. Controlla limiti `alpha`/`beta`, traiettorie sicure, suddivisione degli archi e le funzioni di sicurezza del modulo `spherical_movement.py`.
 
 ## 1. `robot_control.py` (Controllo Macchina)
 **Scopo:** Fornisce un'astrazione Python ad alto livello per il comando sincrono e bloccante del braccio robotico Techman tramite Modbus TCP.
