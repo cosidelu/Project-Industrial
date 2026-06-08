@@ -8,7 +8,7 @@ import numpy as np
 import time
 from matplotlib import pyplot as plt
 
-def variable_helmet_radius(alpha, beta, r_apex=400.0, r_side=300.0, r_back=300.0, r_front=450.0, r_min=300.0):
+def variable_helmet_radius(alpha, beta, r_apex=380.0, r_side=300.0, r_back=300.0, r_front=450.0, r_min=300.0):
     """
     Raggio di lavoro variabile in funzione degli angoli sferici (alpha, beta).
 
