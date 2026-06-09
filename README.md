@@ -290,7 +290,63 @@ print(f"Rilevati {len(unique_defects)} difetti univoci dopo il filtraggio.")
 
 ---
 
-## 5. `inspection_and_marking.py` (Funzioni ad alto livello) e `tests_inspection_marking.ipynb`
+## 5. `spherical_movement.py` (Movimento Sferico e Sicurezza)
+**Scopo:** Gestisce il movimento del robot attorno alla calotta sferica del casco in totale sicurezza, eludendo zone di collisione (es. la base d'appoggio o ingombri frontali/posteriori) ed evitando ostacoli e singolarità. Implementa inoltre il calcolo di una superficie di lavoro a raggio variabile per l'adattamento alla forma reale del casco.
+
+### Modellazione della Superficie di Lavoro
+- `variable_helmet_radius(alpha, beta, ...)`: Calcola il raggio di lavoro ottimale in funzione delle coordinate sferiche correnti. Poiché la calotta non è una sfera perfetta, questa funzione definisce una superficie quadratica liscia che allontana il TCP all'apice (es. 400 mm) e lo avvicina ai lati e sul retro (es. 300 mm). Il modello matematico di base è definito come:
+  
+  `r(alpha, beta) = r_apex - (r_apex - r_side) * sin^2(alpha) - (r_apex - r_back) * cos^2(beta) + (r_front - r_apex) * sin^2(beta-90)`
+  
+  Il risultato viene valutato e limitato inferiormente tramite il parametro `r_min` per prevenire compenetrazioni tra l'utensile e il pezzo in lavorazione.
+- `make_radius_fn(radius)`: Funzione di normalizzazione che accetta in ingresso sia un raggio scalare costante sia una funzione dipendente dagli angoli (come `variable_helmet_radius`). Tale astrazione garantisce la retrocompatibilità del modulo con i flussi di lavoro precedentemente implementati.
+
+### Funzioni di Sicurezza e Controllo Traiettoria
+- `angles_unsafe(alpha, beta)`: Verifica se una singola coordinata sferica di destinazione viola i limiti geometrici spaziali (es. alpha fuori dall'intervallo [-89°, 89°], o beta all'interno di zone di collisione anteriori/posteriori calcolate dinamicamente).
+- `is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta)`: Valuta la sicurezza di un intero arco di traiettoria discretizzandolo in un numero finito di interpolazioni intermedie. Rileva se il percorso sferico diretto tra due punti intrinsecamente sicuri attraversa inavvertitamente una zona di collisione.
+- `move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center, speed)`: Metodo principale per l'esecuzione del moto operativo. Prende in carico lo spostamento validando dinamicamente la traiettoria:
+  - **Calcolo Dinamico del Raggio:** Se il parametro `radius` fornito è di tipo funzionale (es. `variable_helmet_radius`), il raggio viene ricalcolato per ogni punto nodale della traiettoria (incluso il midpoint intermedio) al fine di mappare esattamente la superficie ellissoidale calcolata.
+  - **Verifica Validità:** Controlla la sicurezza della destinazione finale scartando pose non raggiungibili.
+  - **Ottimizzazione Movimento Corto:** Esegue un movimento rettilineo ottimizzato nello spazio operativo (`move_ptp`) per distanze angolari inferiori a 5°.
+  - **Calcolo Archi:** Esegue movimenti curvilinei continui (`move_circle`) determinando analiticamente il punto intermedio di passaggio.
+  - **Suddivisione Archi Ampi:** Intercetta e frammenta automaticamente i movimenti sferici superiori a 90° spezzandoli in due segmenti sequenziali, per prevenire singolarità cinematiche del controller.
+  - **Deviazione di Sicurezza:** In caso di intersezione della traiettoria diretta con volumi d'ingombro non ammessi, devia autonomamente il percorso imponendo un nodo di transito sicuro in corrispondenza dell'apice zenitale del sistema (alpha=0°, beta=90°).
+
+### Esempio d'uso (Movimento verso un nuovo target con raggio variabile)
+
+```python
+import numpy as np
+from spherical_movement import move_circle_spherical, variable_helmet_radius
+from robot_control import RobotController
+import Variables as vb
+
+# 1. Inizializzazione della connessione al robot
+controller = RobotController(ip_address="192.168.19.22")
+controller.connect()
+
+# 2. Definizione del target sferico [Raggio fittizio, Alpha, Beta]
+# La componente raggio inserita nell'array verrà sovrascritta dalla funzione dinamica.
+target_spherical = np.array([0, 45, 90]) 
+
+# 3. Comando di movimento sicuro interpolando il raggio variabile
+success = move_circle_spherical(
+    controller=controller,
+    end_sph_coord=target_spherical,
+    radius=variable_helmet_radius, # Trasmissione della funzione matematica
+    tool_pose_ee=vb.CAMERA_POSE_EE,
+    helmet_center=vb.HELMET_CENTER_GLOBAL,
+    speed=300
+)
+
+if success:
+    print("Movimento completato in sicurezza sull'ellissoide.")
+else:
+    print("Destinazione non convergente con i parametri di sicurezza. Movimento annullato.")
+```
+
+---
+
+## 6. `inspection_and_marking.py` (Funzioni ad alto livello) e `tests_inspection_marking.ipynb`
 **Scopo:** `inspection_and_marking.py` fornisce le macro-funzioni (ispezione, raffinamento, marcatura) per operare sui difetti. Tali funzioni sono pensate per essere orchestrate interattivamente dal notebook `tests_inspection_marking.ipynb`, che ne gestisce il flusso logico, l'accumulo dei risultati e le conferme utente.
 
 ### Funzioni principali
@@ -326,49 +382,3 @@ print(f"Rilevati {len(unique_defects)} difetti univoci dopo il filtraggio.")
 2. **Ispezione Globale**: iterazione su `INSPECTION_POSITIONS` mediante `point_and_shoot` con pause e scatti comandati a step, accumulando e filtrando i cloni.
 3. **Raffinamento**: per ogni difetto univoco viene richiamato `refine_defect_position` con N scatti ravvicinati per ricalcolare `pos3d_global`.
 4. **Marcatura**: interazione di controllo per marcare fisicamente tutti o alcuni dei difetti confermati richiamando `mark_defect`.
-
----
-
-## 6. `spherical_movement.py` (Movimento Sferico e Sicurezza)
-**Scopo:** Gestisce il movimento del robot attorno alla calotta sferica del casco in totale sicurezza, eludendo zone di collisione (es. la base d'appoggio o ingombri frontali/posteriori) ed evitando ostacoli e singolarità.
-
-### Funzioni di Sicurezza e Controllo Traiettoria
-- `angles_unsafe(alpha, beta)`: Verifica se una singola coordinata sferica di destinazione viola i limiti geometrici (es. `alpha` fuori da +/- 90 gradi, o `beta` in zone di collisione anteriori/posteriori calcolate dinamicamente).
-- `is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta)`: Valuta la sicurezza di un intero arco di traiettoria discretizzandolo in step intermedi. Rileva se il percorso sferico diretto tra due punti sicuri attraversa inavvertitamente una zona di collisione.
-- `move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center, speed)`: Funzione master di movimento. Prende in carico lo spostamento calcolando e validando dinamicamente la traiettoria migliore:
-  - **Verifica Validità:** Controlla la sicurezza della destinazione finale scartando pose pericolose.
-  - **Ottimizzazione Movimento Corto:** Esegue un movimento ottimizzato `move_ptp` per distanze angolari molto brevi (< 5°).
-  - **Calcolo Archi:** Esegue movimenti `move_circle` fluidi ricavando automaticamente e coerentemente il punto intermedio (midpoint).
-  - **Suddivisione Archi Ampi:** Intercetta e suddivide automaticamente i movimenti sferici troppo ampi (es. > 90°) spezzandoli in due movimenti sequenziali, per prevenire deviazioni indesiderate del controller fisico.
-  - **Deviazione di Sicurezza:** Se la traiettoria più breve risulta pericolosa (es. attraversa l'ingombro del viso o la base del casco), devia in autonomia il percorso forzando un transito sicuro attraverso l'apice del casco (`alpha=0`, `beta=90`).
-
-### Esempio d'uso (Movimento verso un nuovo target)
-
-```python
-import numpy as np
-from spherical_movement import move_circle_spherical
-from robot_control import RobotController
-import Variables as vb
-
-# 1. Connessione al robot
-controller = RobotController(ip_address="192.168.19.22")
-controller.connect()
-
-# 2. Definizione del target sferico [Raggio, Alpha, Beta]
-target_spherical = np.array([400, 45, 90]) # Raggio 400mm, 45 gradi a destra, elevazione apicale
-
-# 3. Comando di movimento sicuro
-success = move_circle_spherical(
-    controller=controller,
-    end_sph_coord=target_spherical,
-    radius=400,
-    tool_pose_ee=vb.CAMERA_POSE_EE,
-    helmet_center=vb.HELMET_CENTER_GLOBAL,
-    speed=300
-)
-
-if success:
-    print("Movimento completato in sicurezza.")
-else:
-    print("Destinazione fuori dai limiti di sicurezza. Movimento annullato.")
-```
