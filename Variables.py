@@ -9,7 +9,7 @@ Le pose sono di base delle liste di 6 valori [x, y, z, rx, ry, rz] in mm e gradi
 oppure le pose dei giunti sono liste di 6 valori in gradi [j1, j2, j3, j4, j5, j6]
 
 I punti invece sono array numpy di 3 valori [x, y, z] in mm
-anche in coordinate sfereiche [r, alpha, beta] con r in mm e alpha, beta in gradi
+anche in coordinate sferiche [r, alpha, beta] con r in mm e alpha, beta in gradi
 '''
 
 CAMERA_POSE_EE = [32.83, 22.8 , 90.85, 0.0, 0.0, -90.0]  # Posa della fotocamera rispetto all'End Effector
@@ -26,7 +26,7 @@ MARKER_POSE_EE = [0.0, 0.22, 140, 0.0, 0.0, -90.0]       # Posa del marcatore ri
 
 HELMET_CENTER_GLOBAL = [-1.1404489900286907,
                         661.6529292463887,
-                        170]  # 20cm sotto l'apice, poi abbassato di HELMET_CENTER_LOWERING
+                        170]  # posizione fittizia del centro del casco, più in basso rispetto al vero centro
 
 
 # legacy defaults

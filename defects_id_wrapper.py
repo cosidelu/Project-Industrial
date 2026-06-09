@@ -101,7 +101,7 @@ def compute_global_coordinates(defect_list, H_cam_to_global):
     """
     for d in defect_list:
         if d.pos3d_camera is not None:
-            # 4. Applicazione della trasformazione spaziale (valori già in mm dalla ZED)
+            # Applicazione della trasformazione spaziale (valori già in mm dalla ZED)
             d.pos3d_global = kin.homogeneous_trasform(H_cam_to_global, d.pos3d_camera)
 
 def compute_spherical_coordinates(defect_list, helmet_center=HELMET_CENTER_GLOBAL):
@@ -168,7 +168,8 @@ if __name__ == "__main__":
     # 2. Offset telecamera: solo orientamento (Z_cam su X_glob, Y_cam giù, X_cam a dx).
     #camera_offset_ee = [0.0, 0.0, 0.0, -90.0, 0.0, -90.0]
 
-    # in questo modo le coordinate globali sono calcolate rispetto al trackpad del computer per il testing
+    # La posa globale attiva dell'EE è definita da ee_pose_global = [300, 500, 300, 0, 90, 0].
+    # Il riferimento al trackpad si riferiva alla configurazione commentata sopra.
 
     ee_pose_global = [300, 500, 300, 0, 90, 0]
     camera_pose_ee = CAMERA_POSE_EE

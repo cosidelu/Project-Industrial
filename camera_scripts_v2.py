@@ -145,8 +145,8 @@ def find_all_green_masks_and_centroids(bgr_image,
                                        attention_radius = None):
     """
     Segmenta l'immagine RGB per identificare regioni di colore verde.
-    Restituisce una maschera globale e una lista di dizionari, dove ciascun dizionario 
-    contiene i dati e una maschera binaria isolata per il singolo difetto.
+    Restituisce una lista di oggetti defect, dove ciascun oggetto contiene
+    il centroide, l'area, la maschera isolata del difetto e l'immagine BGR.
 
     Input:
     - bgr_image: Immagine standard in formato OpenCV (BGR).
@@ -155,7 +155,7 @@ def find_all_green_masks_and_centroids(bgr_image,
     - MIN_GREEN_AREA: Soglia di area minima per filtrare il rumore.
     - attention_radius: Raggio di attenzione per filtrare i difetti in base alla distanza dal centro.
     Output:
-    - difetti_estratti: Lista di dizionari con chiavi 'centroid', 'contour', 'area', 'mask_isolata', 'bgr_img'.
+    - difetti_estratti: Lista di oggetti defect con centroid, area, mask e bgr_img.
     """
  
     # Conversione dello spazio colore da BGR ad HSV
@@ -344,19 +344,19 @@ def extract_3d_points_from_mask(mask, point_cloud):
     """
 
     Goal:
-    Convert all green pixels into valid 3D points.
+    Convertire i pixel della maschera in punti 3D validi.
 
     Important note:
-    Do NOT use only one pixel if you want a stable 3D estimate, but collect many 
-    3D points and average them.
+    Do NOT usare un singolo pixel se si desidera una stima 3D stabile; raccogliere
+    molti punti e calcolare la media è più robusto.
 
     1. Get all pixel coordinates from the binary mask
-    2. For each pixel, read the corresponding 3D point from the ZED point cloud
+    2. For each mask pixel, read the corresponding 3D point from the ZED point cloud
     3. Reject invalid 3D points
     4. Return the list of valid 3D points
 
     Input:
-    - mask: binary mask of green pixels
+    - mask: binary mask of pixels to project into 3D
     - point_cloud: ZED point cloud container
 
     Output:
@@ -368,7 +368,7 @@ def extract_3d_points_from_mask(mask, point_cloud):
 
     points_3d = []
 
-    # For each green pixel, query the corresponding 3D point
+    # For each mask pixel, query the corresponding 3D point
     for x, y in zip(xs, ys):
         err, point = point_cloud.get_value(int(x), int(y))
 

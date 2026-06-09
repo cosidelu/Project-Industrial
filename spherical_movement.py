@@ -86,18 +86,19 @@ def angles_unsafe(alpha, beta):
     if not (0.0 <= beta <= 180.0):
         return True
 
-    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 120 gradi
+    # 2. Controllo limite laterale: alpha deve essere compreso entro +/- 89 gradi
     if alpha > 89 or alpha < -89.0:
         return True
 
     # 3. Controllo zona posteriore (retro): più larga che alta
-    # A alpha = 0 la soglia è 20, a alpha = 90 la soglia sale a 30
+    # A alpha = 0 la soglia è 20, a alpha = +/-90 la soglia sale a 45
     beta_soglia_retro = 20 + 25.0 * (alpha / 90.0)**2
     if beta < beta_soglia_retro:
         return True
 
     # 4. Controllo zona anteriore (fronte): più stretta che alta
-    # A alpha = 0 la soglia massima ammessa è 110, a alpha = 90 sale a 140
+    # A alpha = 0 la soglia massima ammessa è 110; il termine in alpha è moltiplicato per zero,
+    # quindi il valore rimane costante per tutti gli angoli laterali.
     beta_soglia_fronte = 110.0 + 0 * (alpha / 90.0)**2
     if beta > beta_soglia_fronte:
         return True
@@ -189,7 +190,7 @@ def move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helme
         return False
 
     # --- 3. Controllo Sicurezza Traiettoria ---
-    # Se il segmento taglia una zona pericolosa, deviamo passano per l'apice (0, 90) che è sempre sicuro.
+    # Se il segmento taglia una zona pericolosa, deviamo passando per l'apice (0, 90) che è sempre sicuro.
     if is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta):
         print(f"  [SAFETY] Traiettoria non sicura. Deviazione tramite l'apice del casco.")
         apex_alpha, apex_beta = 0.0, 90.0

@@ -67,13 +67,13 @@ class RobotController:
     def move_ptp(self, pose, speed=SPEED, data_format="CPP"):
         """Esegue un movimento PTP (Punto-Punto) e attende il completamento"""
         speed = speed * PTP_SCALE
-        speed = int(speed)  # Assicurati che la velocità sia un intero
+        speed = int(speed)
         self.robot.ptp(pose, speed, data_format=data_format)
         self._wait_until_pose(pose, use_joints=False)
 
     def move_joints(self, joints, speed=SPEED):
         speed = speed * PTP_SCALE
-        speed = int(speed)  # Assicurati che la velocità sia un intero
+        speed = int(speed)
         self.robot.ptp(joints, speed, data_format="JPP")
         self._wait_until_pose(joints, use_joints=True)
 
@@ -110,7 +110,7 @@ def main():
 
 
 # =====================================================================
-# BLOCCO DI VALIDAZIONE UNITARIA (UNIT TEST)
+# BLOCCO DI ESEMPIO / DEBUG MANUALE
 # =====================================================================
 
 if __name__ == "__main__":

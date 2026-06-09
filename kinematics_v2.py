@@ -1,7 +1,7 @@
 import numpy as np
 
-# Costanti globali per la configurazione del sistema
-# ci rcordaimo che le pose stanno in liste perché il controller ragiona in liste
+# Convenzioni sulla rappresentazione delle pose e note sul formato
+# ricordiamo che le pose stanno in liste perché il controller ragiona in liste
 # i punti invece vanno direttamente in np arrays
 
 
@@ -266,7 +266,7 @@ def compute_ee_pose_for_tool_target(p_obj, r_obj, tool_pose_ee):
     return t_ee.tolist() + r_ee.tolist()
 
 # =====================================================================
-# BLOCCO DI VALIDAZIONE UNITARIA (UNIT TEST)
+# BLOCCO DI ESEMPIO / DEBUG MANUALE
 # =====================================================================
 if __name__ == "__main__":
     print("ciao")
