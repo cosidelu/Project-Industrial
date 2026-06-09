@@ -41,7 +41,6 @@ flowchart LR
   kin -->|"to_helmet_coordinates\nto_helmet_angles\ncompute_ee_pose_for_tool_target"| sph
 
   cam -->|take_defects_local\n| defects
-  cam -->|draw_multiple_debug| im
 
   vars -->|"HELMET_CENTER_GLOBAL\nCAMERA_POSE_EE\nMARKER_POSE_EE"| im
   
@@ -58,7 +57,7 @@ move_to_hub| nb_together
   vars -->|EE_POSES| nb_open
 ```
 
-Nota: il diagramma posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi principali che generano la dipendenza.
+Nota: il diagramma posiziona i moduli di base a sinistra e i moduli di livello superiore a destra; le etichette sugli archi indicano le funzioni/metodi **principali** che generano la dipendenza.
 
 Il repository include moduli Python dedicati a:
 - controllo robotico e movimento (`robot_control.py`),
