@@ -174,7 +174,10 @@ Il modulo gestisce la conversione continua tra diversi sistemi spaziali:
   - **`r` (Raggio):** Distanza in millimetri dell'obiettivo dal centro della calotta.
   - **`alpha` (Longitudine/Azimut):** Rotazione laterale attorno all'asse Y globale. Il valore `0°` definisce il meridiano di mezzeria centrale. Spostarsi a `-90°` fa navigare il robot sul lato destro del casco, mentre `+90°` descrive il lato sinistro.
   - **`beta` (Latitudine/Elevazione):** Angolo che definisce l'inclinazione dorsale sul profilo del casco. Parte dal retro orizzontale (`0°`), sale all'apice zenitale (`90°`), e discende fino all'area visiera frontale (`180°`).
-  **Nota sui Gimbal Lock:** Le rotazioni nello spazio 3D soffrono intrinsecamente di singolarità matematiche ("blocchi" cardanici che fanno ribaltare i giunti del robot). Questa specifica ed innovativa convenzione sposta appositamente i poli matematici nell'estremo fronte e retro (zone inaccessibili al braccio per via della base di appoggio), assicurando che le normali traiettorie trasversali e apicali risultino sempre dolci e continue.
+
+**Nota sui Gimbal Lock:** Le coordinate sferiche soffrono intrinsecamente di singolarità matematiche, in cui la stessa posizione è descritta da infinite combinazioni degli angoli $\alpha$ e $\beta$. 
+Tale indeterminatezza diventa un problema quando vogliamo ricavare gli angoli associati ad un punto vicino alle singolarità, per cui piccole variazioni di posizione risultano in enormi variazioni degli angoli associati.
+Questa specifica convenzione posiziona le singolarità a $\beta = [0°, 180°]$, in cui $\forall \alpha \in [-180° , 180°]$ le posizioni indicate sono rispettivamente il retro ed il fronte del casco. Spostando le singolarità in zone inaccessibili per il robot evitiamo bruschi cambiamenti di orientamento e ci assicuriamo che il robot mantenga configurazioni ai giunti compatibili con la presenza del casco.
 
 ### Funzioni Lineari Spaziali (Cartesiane)
 - `create_rot_matrix_zyx(r)`: Riceve un vettore di tre angoli di Eulero in gradi `[Rx, Ry, Rz]`, li converte in radianti e compila le 3 Matrici di Rotazione Base. Restituisce la Matrice 3x3 composta secondo ordine asse fisso `ZYX` (equivalente ad ordine intrinseco `XYZ`, coerente con Techman e trasformazioni Locale->Globale).

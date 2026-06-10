@@ -180,7 +180,10 @@ The module manages continuous transformations across distinct spatial systems:
 * **`r` (Radius):** Distance in millimeters from the target to the center of the shell.
 * **`alpha` (Longitude/Azimuth):** Lateral rotation around the global Y axis. A value of `0°` defines the central midline meridian. Moving to `-90°` directs the robot to the right side of the helmet, while `+90°` describes the left side.
 * **`beta` (Latitude/Elevation):** Angle defining the dorsal inclination along the helmet profile. It originates from the horizontal rear (`0°`), ascends to the zenith apex (`90°`), and descends to the front visor region (`180°`).
-**Note on Gimbal Lock:** 3D spatial rotations inherently suffer from mathematical singularities (gimbal locks that cause robot joint flips). This specific convention intentionally shifts the mathematical poles to the extreme front and rear regions (areas inaccessible to the arm due to the physical mounting base), ensuring that nominal transverse and apical trajectories remain smooth and continuous.
+
+**Note on Gimbal Lock:** Spherical coordinates intrinsically suffer from mathematical singularities, where the same position is described by infinite combinations of the angles $\alpha$ and $\beta$. 
+This indeterminacy becomes problematic when attempting to derive the angles associated with a point near the singularities, where minor variations in position result in massive variations in the associated angles.
+This specific convention positions the singularities at $\beta = [0°, 180°]$, where $\forall \alpha \in [-180° , 180°]$ the indicated positions correspond to the back and the front of the helmet, respectively. By shifting the singularities to zones inaccessible to the robot, we prevent abrupt changes in orientation and ensure that the robot maintains joint configurations compatible with the presence of the helmet.
 
 
 
@@ -189,20 +192,20 @@ The module manages continuous transformations across distinct spatial systems:
 * `create_rot_matrix_zyx(r)`: Receives a vector of three Euler angles in degrees `[Rx, Ry, Rz]`, converts them to radians, and compiles the 3 Base Rotation Matrices. Returns the composed 3x3 Rotation Matrix according to the `ZYX` fixed-axis order (equivalent to the `XYZ` intrinsic order, consistent with Techman and Local->Global transformations).
 * `rot_matrix_to_angles_zyx(R)`: Performs the inverse operation of the aforementioned function. Extracts Cardan angles from the rotation matrix while internally managing singularities (Gimbal Lock).
 * `create_homogeneous_matrix(pose, Inverse=False)`: Generates a 4x4 homogeneous transformation matrix `H`. Setting the flag `Inverse=True` computes the inverse matrix $H^{-1}$ by calculating the transpose $R^T$ and the vector $-R^T t$.
-**Structure and Operation of Matrix H:**
-The matrix `H` encapsulates both orientation and position within a single 4x4 mathematical structure:
-```text
-    [ R11  R12  R13 | Tx ]
-H = [ R21  R22  R23 | Ty ]
-    [ R31  R32  R33 | Tz ]
-    [  0    0    0  |  1 ]
+    **Structure and Operation of Matrix H:**
+    The matrix `H` encapsulates both orientation and position within a single 4x4 mathematical structure:
+    ```text
+        [ R11  R12  R13 | Tx ]
+    H = [ R21  R22  R23 | Ty ]
+        [ R31  R32  R33 | Tz ]
+        [  0    0    0  |  1 ]
 
-```
+    ```
 
 
-* **3x3 Submatrix (Top-Left):** Represents the Rotation Matrix `R`. Its three columns correspond to the unit vectors of the X, Y, and Z axes of the *local* reference system projected onto the *global* space.
-* **3x1 Vector (Top-Right):** Represents the Translation Vector `T`. It indicates the `[X, Y, Z]` spatial coordinates of the local origin within the global space.
-* **1x4 Row (Bottom):** `[0, 0, 0, 1]`. A dummy row (spatial affine identifier) required strictly for matrix algebra execution when multiplying a 3D point.
+    * **3x3 Submatrix (Top-Left):** Represents the Rotation Matrix `R`. Its three columns correspond to the unit vectors of the X, Y, and Z axes of the *local* reference system projected onto the *global* space.
+    * **3x1 Vector (Top-Right):** Represents the Translation Vector `T`. It indicates the `[X, Y, Z]` spatial coordinates of the local origin within the global space.
+    * **1x4 Row (Bottom):** `[0, 0, 0, 1]`. A dummy row (spatial affine identifier) required strictly for matrix algebra execution when multiplying a 3D point.
 
 
 Multiplying `H` by a point expressed in local coordinates `P_L` (e.g., a defect detected by the camera) yields its exact position within the global space `P_G` of the robot base in a single operation: `P_G = H @ P_L`.
@@ -249,12 +252,12 @@ The result is evaluated and bounded from below by the `r_min` parameter to preve
 * `angles_unsafe(alpha, beta)`: Verifies whether a target spherical coordinate violates spatial geometric limits (e.g., alpha outside the [-89°, 89°] interval, or beta inside dynamically computed front/rear collision volumes).
 * `is_trajectory_unsafe(start_alpha, start_beta, end_alpha, end_beta)`: Evaluates the safety of an entire trajectory arc by discretizing it into a finite number of intermediate interpolations. Detects if the direct spherical path between two safe endpoints crosses an unsafe collision zone.
 * `move_circle_spherical(controller, end_sph_coord, radius, tool_pose_ee, helmet_center, speed)`: Main method for executing operational motion. It manages displacement while dynamically validating the trajectory:
-* **Dynamic Radius Computation:** If the provided `radius` parameter is functional (e.g., `variable_helmet_radius`), the radius is recomputed for each nodal point of the trajectory (including the intermediate midpoint) to accurately map the calculated ellipsoidal surface.
-* **Validity Verification:** Validates the final destination safety, discarding unreachable poses.
-* **Short Motion Optimization:** Executes an optimized straight-line motion in the operational space (`move_ptp`) for angular distances below 5°.
-* **Arc Computation:** Executes continuous curvilinear motions (`move_circle`) by analytically determining the intermediate pass-through point.
-* **Wide Arc Segmentation:** Automatically intercepts and segments spherical movements exceeding 90° into two sequential segments to prevent controller kinematic singularities.
-* **Safety Deviation:** If the direct trajectory intersects restricted clearance volumes, it autonomously re-routes the path by introducing a safe transit node at the system's zenith apex (alpha=0°, beta=90°).
+    * **Dynamic Radius Computation:** If the provided `radius` parameter is functional (e.g., `variable_helmet_radius`), the radius is recomputed for each nodal point of the trajectory (including the intermediate midpoint) to accurately map the calculated ellipsoidal surface.
+    * **Validity Verification:** Validates the final destination safety, discarding unreachable poses.
+    * **Short Motion Optimization:** Executes an optimized straight-line motion in the operational space (`move_ptp`) for angular distances below 5°.
+    * **Arc Computation:** Executes continuous curvilinear motions (`move_circle`) by analytically determining the intermediate pass-through point.
+    * **Wide Arc Segmentation:** Automatically intercepts and segments spherical movements exceeding 90° into two sequential segments to prevent controller kinematic singularities.
+    * **Safety Deviation:** If the direct trajectory intersects restricted clearance volumes, it autonomously re-routes the path by introducing a safe transit node at the system's zenith apex (alpha=0°, beta=90°).
 
 
 
@@ -267,33 +270,33 @@ The result is evaluated and bounded from below by the `r_min` parameter to preve
 ### Main Functions
 
 * `move_to_hub(controller, hub=[0, 0, 90])`:
-* **Input:** `controller` (`RobotController` object), `hub` (optional list of spherical coordinates).
-* **Output:** None (raises an exception if the movement is unsafe).
-* **Description:** Moves the robot to a designated safe hub point above the helmet, separating macro-movements between distinct captures to avoid dangerous direct transitions across the dome.
+    * **Input:** `controller` (`RobotController` object), `hub` (optional list of spherical coordinates).
+    * **Output:** None (raises an exception if the movement is unsafe).
+    * **Description:** Moves the robot to a designated safe hub point above the helmet, separating macro-movements between distinct captures to avoid dangerous direct transitions across the dome.
 
 
 * `point_and_shoot(controller, zed, runtime, image_zed, point_cloud, test_sph, ...)`:
-* **Input:** ZED sensors, `controller`, and `test_sph` (target spherical capture position `[r, alpha, beta]`).
-* **Output:** A tuple `(defect_list, debug_img, mask_bgr, bgr_image)` containing the list of isolated defects (`defect` objects) and debug images.
-* **Description:** Displaces the robot to the specified pose and invokes `take_defects_global` to capture data and extract local and global 3D coordinates.
+    * **Input:** ZED sensors, `controller`, and `test_sph` (target spherical capture position `[r, alpha, beta]`).
+    * **Output:** A tuple `(defect_list, debug_img, mask_bgr, bgr_image)` containing the list of isolated defects (`defect` objects) and debug images.
+    * **Description:** Displaces the robot to the specified pose and invokes `take_defects_global` to capture data and extract local and global 3D coordinates.
 
 
 * `refine_defect_position(controller, zed, runtime, image_zed, point_cloud, defect_obj, ...)`:
-* **Input:** ZED sensors, `controller`, and `defect_obj` (target defect object to refine).
-* **Output:** Boolean value (`True` if successfully refined, `False` if no valid match is found or if the pose is unreachable). Modifies `defect_obj.pos3d_global` in-place.
-* **Description:** For each estimated defect, executes a sequence of close-up captures from a fixed distance, associates the best detections, and averages their global positions to maximize accuracy (minimizing depth sensor noise).
+    * **Input:** ZED sensors, `controller`, and `defect_obj` (target defect object to refine).
+    * **Output:** Boolean value (`True` if successfully refined, `False` if no valid match is found or if the pose is unreachable). Modifies `defect_obj.pos3d_global` in-place.
+    * **Description:** For each estimated defect, executes a sequence of close-up captures from a fixed distance, associates the best detections, and averages their global positions to maximize accuracy (minimizing depth sensor noise).
 
 
 * `mark_defect(controller, defect_obj, helmet_center, ...)`:
-* **Input:** `controller`, `defect_obj` (validated defect object), and global helmet center coordinates.
-* **Output:** Boolean value (`True` if marking completed, `False` in case of an invalid defect or unsafe trajectory).
-* **Description:** Computes the marker target pose. Moves to the pre-approach point, advances linearly onto the validated defect (`move_line`), and retracts. Dynamically stores the previous pose to guarantee a safe exit trajectory outside clearance boundaries.
+    * **Input:** `controller`, `defect_obj` (validated defect object), and global helmet center coordinates.
+    * **Output:** Boolean value (`True` if marking completed, `False` in case of an invalid defect or unsafe trajectory).
+    * **Description:** Computes the marker target pose. Moves to the pre-approach point, advances linearly onto the validated defect (`move_line`), and retracts. Dynamically stores the previous pose to guarantee a safe exit trajectory outside clearance boundaries.
 
 
 * `show_debug_matplotlib(debug_img, mask_bgr, title)`:
-* **Input:** Images formatted as `numpy` arrays (RGB/BGR or Masks) and a `title` string.
-* **Output:** None.
-* **Description:** Rendering utility to output inline masks within the Jupyter Notebook using `matplotlib`.
+    * **Input:** Images formatted as `numpy` arrays (RGB/BGR or Masks) and a `title` string.
+    * **Output:** None.
+    * **Description:** Rendering utility to output inline masks within the Jupyter Notebook using `matplotlib`.
 
 
 
@@ -313,7 +316,6 @@ The result is evaluated and bounded from below by the `r_min` parameter to preve
 
 ---
 
-```markdown
 ### 1. Code Snippet for `robot_control.py` (Default Positioning Example)
 ```python
 from robot_control import RobotController
@@ -433,9 +435,5 @@ if success:
     print("Motion safely completed along the ellipsoidal surface.")
 else:
     print("Destination violates safety constraints. Motion aborted.")
-
-```
-
-```
 
 ```
