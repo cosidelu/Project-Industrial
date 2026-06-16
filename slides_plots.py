@@ -40,13 +40,20 @@ INSPECTION_POSITIONS = [
     [INSPECTION_RADIUS, -45, 45],   # left side
 ]
 
-# Real unique defects from the PHASE2 notebook run: (pos3d_global, area).
-REAL_DEFECTS = [
+# Real raw detections from the PHASE2 notebook run, BEFORE duplicate_filter
+# (5 detections, "Difetti totali prima del filtro duplicati"): (pos3d_global, area).
+# The 2nd and 5th entries are the real near-duplicate pair (~8.8 mm apart);
+# duplicate_filter keeps the 5th (larger area, perpendicular shot).
+RAW_DETECTIONS = [
     ([43.1, 677.8, 387.7], 1529.0),
-    ([-81.2, 706.9, 364.8], 3349.0),
+    ([-72.7, 704.8, 364.9], 1482.5),
     ([52.0, 829.0, 205.1], 1088.5),
     ([109.6, 729.9, 326.3], 1610.5),
+    ([-81.2, 706.9, 364.8], 3349.0),
 ]
+
+# Unique defect #3 of the real run (area 1088.5) is excluded from this slide.
+EXCLUDED_POS = np.array([52.0, 829.0, 205.1])
 
 # Helmet approximated as a sphere: radius 180 mm, centre 70 mm above
 # HELMET_CENTER_GLOBAL (the apex, beta=90, lies along +Z in this convention).
@@ -57,9 +64,10 @@ HELMET_SPHERE_CENTER = HC + np.array([0.0, 0.0, 70.0])
 # ----------------------------------------------------------------------
 # Geometry helpers
 # ----------------------------------------------------------------------
-def sphere_surface(center, radius, n=30):
+def sphere_surface(center, radius, n=30, upper_only=False):
     u = np.linspace(0, 2 * np.pi, n)
-    v = np.linspace(0, np.pi, n)
+    # upper_only -> polar angle 0..pi/2 gives just the top hemisphere (z>=center)
+    v = np.linspace(0, np.pi / 2 if upper_only else np.pi, n)
     x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
     y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
     z = center[2] + radius * np.outer(np.ones_like(u), np.cos(v))
@@ -81,7 +89,7 @@ def cylinder_mask(X, Y, Z, p_start, axis_dir, r_min, r_max, radius):
     return (depth >= r_min) & (depth <= r_max) & (lateral <= radius)
 
 
-def set_equal_3d(ax, pts, center=None):
+def set_equal_3d(ax, pts, center=None, zoom=0.82):
     pts = np.asarray(pts)
     # Centre the view on `center` (the helmet) if given, else on the points.
     c = np.asarray(center, float) if center is not None else pts.mean(axis=0)
@@ -90,7 +98,9 @@ def set_equal_3d(ax, pts, center=None):
     ax.set_xlim(c[0] - span, c[0] + span)
     ax.set_ylim(c[1] - span, c[1] + span)
     ax.set_zlim(c[2] - span, c[2] + span)
-    ax.set_box_aspect((1, 1, 1))  # equal scale on all axes -> 1:1:1
+    # zoom < 1 shrinks the whole 3D rendering within the axes region, leaving
+    # room for the tick labels so they aren't clipped while the view rotates.
+    ax.set_box_aspect((1, 1, 1), zoom=zoom)  # equal scale on all axes -> 1:1:1
     ax.set_xlabel("X [mm]"); ax.set_ylabel("Y [mm]"); ax.set_zlabel("Z [mm]")
 
 
@@ -155,7 +165,9 @@ def draw_cylinder_scene(ax):
     )
     ax.legend(loc="upper left", fontsize=8,
               title="capture (variable radius)")
-    set_equal_3d(ax, all_pts, center=HELMET_SPHERE_CENTER)
+    # Wider scene (cameras 1-7 spread far out) -> zoom out more so the tick
+    # labels stay inside the frame all the way through the rotation.
+    set_equal_3d(ax, all_pts, center=HELMET_SPHERE_CENTER, zoom=0.7)
 
 
 # ----------------------------------------------------------------------
@@ -169,22 +181,25 @@ class FakeDefect:
 
 
 def draw_duplicate_scene(ax):
-    # Start from the 4 real unique defects of the notebook run, then add one
-    # near-duplicate (within DUPLICATE_DISTANCE) so the 5 -> 4 merge of the
-    # real run is reproduced. The duplicate has a smaller area than its twin,
-    # so duplicate_filter keeps the real (larger-area) detection.
-    detections = [FakeDefect(p, a) for p, a in REAL_DEFECTS]
-    twin = detections[1]                       # largest area defect (3349)
-    dup_pos = twin.pos3d_global + np.array([6.0, -5.0, 7.0])  # ~10.5 mm away
-    detections.insert(2, FakeDefect(dup_pos, area=twin.area * 0.4))
+    # The 5 real raw detections of the notebook run, fed through the real
+    # duplicate_filter exactly as PHASE2 does (5 -> 4 unique).
+    detections = [FakeDefect(p, a) for p, a in RAW_DETECTIONS]
 
     unique = duplicate_filter(detections, distance_threshold=DUPLICATE_DISTANCE)
     unique_ids = {id(u) for u in unique}
 
-    kept = np.array([d.pos3d_global for d in detections if id(d) in unique_ids])
-    removed = np.array([d.pos3d_global for d in detections if id(d) not in unique_ids])
+    # Unique defect 3 of the real run (area 1088.5) is left out of this slide.
+    def shown(d):
+        return not np.allclose(d.pos3d_global, EXCLUDED_POS)
 
-    sx, sy, sz = sphere_surface(HELMET_SPHERE_CENTER, HELMET_SPHERE_RADIUS, n=24)
+    kept = np.array([d.pos3d_global for d in detections
+                      if id(d) in unique_ids and shown(d)])
+    removed = np.array([d.pos3d_global for d in detections
+                         if id(d) not in unique_ids and shown(d)])
+
+    # Only the top hemisphere of the dome, so the defect cluster is seen closer.
+    sx, sy, sz = sphere_surface(HELMET_SPHERE_CENTER, HELMET_SPHERE_RADIUS,
+                                n=24, upper_only=True)
     ax.plot_wireframe(sx, sy, sz, color="0.7", linewidth=0.3, alpha=0.35)
 
     # Merge sphere (radius = DUPLICATE_DISTANCE) only around the kept defects:
@@ -216,28 +231,41 @@ def draw_duplicate_scene(ax):
         f"({len(detections)} detections -> {len(unique)} unique)"
     )
     ax.legend(loc="upper right")
-    pts = np.vstack([[d.pos3d_global for d in detections],
-                     HELMET_SPHERE_CENTER + HELMET_SPHERE_RADIUS,
-                     HELMET_SPHERE_CENTER - HELMET_SPHERE_RADIUS])
-    set_equal_3d(ax, pts, center=HELMET_SPHERE_CENTER)
+    # Frame tightly on the defect cluster (with their merge spheres) instead of
+    # the whole dome, so the view sits close to the defects. The dome wireframe
+    # beyond this box is just context and may run off-frame.
+    cluster = np.vstack([kept, removed]) if len(removed) else kept
+    pts = np.vstack([cluster + DUPLICATE_DISTANCE, cluster - DUPLICATE_DISTANCE])
+    set_equal_3d(ax, pts, center=(pts.min(axis=0) + pts.max(axis=0)) / 2)
 
 
 # ----------------------------------------------------------------------
 # Rendering: transparent PNG + rotating transparent GIF
 # ----------------------------------------------------------------------
-def _rgba_to_transparent_p(im):
-    """Convert an RGBA frame to a paletted image with a transparent index,
-    so the GIF keeps a see-through background while rotating."""
+def _rgba_to_transparent_p(im, matte=(255, 255, 255)):
+    """Convert an RGBA frame to a paletted image with a transparent index, so
+    the GIF keeps a see-through background while rotating.
+
+    A GIF has only 1-bit alpha, so every pixel is either fully opaque or fully
+    transparent. The previous version binarised on `alpha <= 128`, which erased
+    every anti-aliased pixel below that cutoff -- i.e. most of the thin tick
+    labels and the translucent surfaces -- so numbers looked chopped up in the
+    GIF even though each frame was fine. Instead flatten the frame onto a solid
+    matte (keeps anti-aliased text/edges crisp) and turn ONLY the genuinely
+    empty background (alpha ~ 0) transparent."""
     from PIL import Image
     alpha = im.getchannel("A")
-    p = im.convert("RGB").convert("P", palette=Image.ADAPTIVE, colors=255)
-    # fully/mostly transparent pixels -> reserved palette index 255
-    mask = alpha.point(lambda a: 255 if a <= 128 else 0)
+    bg = Image.new("RGBA", im.size, tuple(matte) + (255,))
+    flat = Image.alpha_composite(bg, im).convert("RGB")
+    p = flat.convert("P", palette=Image.ADAPTIVE, colors=255)
+    # only near-zero alpha (true background) -> reserved transparent index 255
+    mask = alpha.point(lambda a: 255 if a < 8 else 0)
     p.paste(255, mask)
     return p
 
 
-def render_scene(draw_fn, name, elev=20, n_frames=120, duration=110, dpi=130):
+def render_scene(draw_fn, name, elev=20, n_frames=120, duration=110, dpi=130,
+                 box=(0.06, 0.10, 0.74, 0.74)):
     """Draw the scene once, save a transparent PNG, then spin the azimuth
     360 deg and save a transparent rotating GIF."""
     import io
@@ -248,6 +276,11 @@ def render_scene(draw_fn, name, elev=20, n_frames=120, duration=110, dpi=130):
     ax = fig.add_subplot(111, projection="3d")
     ax.set_facecolor("none")                      # transparent axes panel
     draw_fn(ax)
+    # Place the axes within the figure leaving padding all around: as the view
+    # spins the cube and its tick/axis labels sweep outwards, and a full-bleed
+    # axes would clip them at the frame edge. The box is shifted slightly left
+    # to counter the rightward bias of the projection at azim=0.
+    ax.set_position(list(box))
 
     # static PNG (transparent)
     ax.view_init(elev=elev, azim=-72)
